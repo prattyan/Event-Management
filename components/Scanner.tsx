@@ -26,9 +26,34 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const playBeep = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.frequency.setValueAtTime(1000, ctx.currentTime);
+      osc.type = 'square';
+
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    } catch (e) {
+      console.error("Audio play failed", e);
+    }
+  };
+
   const startScanner = async () => {
     if (!mountRef.current) return;
-    
+
     // Cleanup existing instance if any
     if (scannerRef.current) {
       await stopScanner();
@@ -49,9 +74,10 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         { facingMode: "environment" },
         config,
         (decodedText) => {
+          playBeep();
           onScan(decodedText);
           // Pause to prevent duplicate scans of the same code
-          scanner.pause(true); 
+          scanner.pause(true);
           setTimeout(() => {
             try {
               scanner.resume();
@@ -64,7 +90,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           // ignore parsing errors
         }
       );
-      
+
       setIsScanning(true);
       setError(null);
     } catch (err: any) {
@@ -75,7 +101,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
       } else if (err?.name === "NotFoundError") {
         msg = "No camera found on this device.";
       } else if (err?.name === "NotReadableError") {
-         msg = "Camera is currently in use by another application.";
+        msg = "Camera is currently in use by another application.";
       }
       setError(msg);
       setIsScanning(false);
@@ -109,7 +135,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
 
         <div className="relative aspect-square bg-black">
           <div id="qr-reader" ref={mountRef} className="w-full h-full"></div>
-          
+
           {!isScanning && !error && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-6 text-center">
               <RefreshCcw className="w-8 h-8 animate-spin mb-4" />
@@ -121,7 +147,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
             <div className="absolute inset-0 flex flex-col items-center justify-center text-red-400 p-6 text-center bg-slate-900/90 z-10">
               <Camera className="w-12 h-12 mb-4 opacity-50" />
               <p>{error}</p>
-              <button 
+              <button
                 onClick={startScanner}
                 className="mt-6 px-4 py-2 bg-slate-800 rounded-lg text-white hover:bg-slate-700 flex items-center gap-2"
               >

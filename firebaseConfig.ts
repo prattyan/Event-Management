@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 // Configuration uses environment variables if available, otherwise falls back to placeholders.
@@ -16,6 +16,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app); // We keep this exported just in case, but will use MongoDB for data.
 console.log("Firebase API Key Present:", !!process.env.FIREBASE_API_KEY);
 export const isFirebaseConfigured = !!process.env.FIREBASE_API_KEY && process.env.FIREBASE_API_KEY !== "AIzaSyDOCAbC123dEfG456hIj789-DUMMY-KEY";

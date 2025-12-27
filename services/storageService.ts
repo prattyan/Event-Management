@@ -3,7 +3,8 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  User as FirebaseUser
+  User as FirebaseUser,
+  signInWithPopup
 } from "firebase/auth";
 import {
   collection,
@@ -17,7 +18,7 @@ import {
   getDoc,
   deleteDoc
 } from "firebase/firestore";
-import { auth, db, isFirebaseConfigured } from "../firebaseConfig";
+import { auth, db, isFirebaseConfigured, googleProvider } from "../firebaseConfig";
 import { Event, Registration, RegistrationStatus, User } from '../types';
 import { STORAGE_KEYS } from '../constants';
 
@@ -480,6 +481,39 @@ export const loginUser = async (email: string, password: string): Promise<User |
   }
 
   return user;
+};
+
+export const loginWithGoogle = async (role: 'attendee' | 'organizer'): Promise<User | null> => {
+  if (!USE_FIREBASE_AUTH) {
+    alert("Firebase Auth is not configured.");
+    return null;
+  }
+
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    const firebaseUser = result.user;
+
+    // Check if user profile already exists
+    let userProfile = await getUserProfile(firebaseUser.uid);
+
+    if (!userProfile) {
+      // First time login - create profile
+      userProfile = {
+        id: firebaseUser.uid,
+        name: firebaseUser.displayName || 'User',
+        email: firebaseUser.email || '',
+        role: role, // Role chosen by user in UI before clicking Google Sign In? Or we default?
+        // We'll pass it in.
+        password: '', // No password for OAuth
+      };
+      await saveUserProfile(userProfile);
+    }
+
+    return userProfile;
+  } catch (error) {
+    console.error("Google Sign In Error", error);
+    return null;
+  }
 };
 
 export const logoutUser = async (): Promise<void> => {
