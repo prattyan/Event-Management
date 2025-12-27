@@ -4,7 +4,8 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
-  signInWithPopup
+  signInWithPopup,
+  sendPasswordResetEmail
 } from "firebase/auth";
 import {
   collection,
@@ -58,7 +59,9 @@ async function mongoRequest(action: string, collection: string, body: any = {}) 
   });
 
   if (!response.ok) {
-    throw new Error(`MongoDB API Error: ${response.statusText}`);
+    const errorText = await response.text();
+    console.error("MongoDB API Error:", response.status, response.statusText, errorText);
+    throw new Error(`MongoDB API Error: ${response.statusText} - ${errorText}`);
   }
 
   return response.json();
@@ -101,9 +104,9 @@ export const saveEvent = async (event: Omit<Event, 'id'>): Promise<Event | null>
       const newEvent = { ...event, id: newId };
       await mongoRequest('insertOne', 'events', { document: newEvent });
       return newEvent;
-    } catch (e) {
+    } catch (e: any) {
       console.error("Mongo save event failed", e);
-      return null;
+      throw e;
     }
   }
 
@@ -123,18 +126,18 @@ export const saveEvent = async (event: Omit<Event, 'id'>): Promise<Event | null>
   localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify([...events, newEvent]));
   return newEvent;
 };
-
 export const updateEvent = async (event: Event): Promise<boolean> => {
   if (USE_MONGO) {
     try {
-      await mongoRequest('updateOne', 'events', {
-        filter: { id: event.id },
-        update: { $set: event }
+      const { id, ...updateData } = event;
+      const result = await mongoRequest('updateOne', 'events', {
+        filter: { id: id },
+        update: { $set: updateData }
       });
-      return true;
-    } catch (e) {
+      return result.modifiedCount > 0 || result.matchedCount > 0 || result.upsertedCount > 0;
+    } catch (e: any) {
       console.error("Mongo update event failed", e);
-      return false;
+      throw e;
     }
   }
 
@@ -159,6 +162,51 @@ export const updateEvent = async (event: Event): Promise<boolean> => {
     return true;
   }
   return false;
+};
+
+export const deleteEvent = async (id: string): Promise<boolean> => {
+  if (USE_MONGO) {
+    try {
+      console.log(`[Delete Event] Attempting to delete event: ${id}`);
+      const result = await mongoRequest('deleteOne', 'events', { filter: { id: id } });
+      console.log("[Delete Event] DeleteOne result:", result);
+
+      // Also delete registrations for this event to keep data clean
+      try {
+        await mongoRequest('deleteMany', 'registrations', { filter: { eventId: id } });
+      } catch (regError) {
+        console.warn("[Delete Event] Failed to cleanup registrations:", regError);
+        // We still consider the event deletion a success if the event itself was removed
+      }
+
+      return true; // We return true if the request completed without error
+    } catch (e) {
+      console.error("Mongo delete event failed", e);
+      return false;
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      await deleteDoc(doc(db, "events", id));
+      // Note: In Firestore, you'd typically need a cloud function or batch to delete sub-collections/related docs
+      return true;
+    } catch (e) {
+      console.error("Firebase deleteEvent failed:", e);
+      return false;
+    }
+  }
+
+  // Local Storage
+  const events = await getEvents();
+  const filteredEvents = events.filter(e => e.id !== id);
+  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(filteredEvents));
+
+  const regs = await getRegistrations();
+  const filteredRegs = regs.filter(r => r.eventId !== id);
+  localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(filteredRegs));
+
+  return true;
 };
 
 // --- Registrations ---
@@ -193,6 +241,28 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
 
   if (USE_MONGO) {
     try {
+      // Validation: Check Capacity
+      // This is a rough check; ideally should be atomic transaction or use $inc with condition
+      const eventResult = await mongoRequest('findOne', 'events', { filter: { id: reg.eventId } });
+      const event = eventResult.document;
+
+      if (!event) throw new Error("Event not found");
+
+      const regsResult = await mongoRequest('find', 'registrations', {
+        filter: { eventId: reg.eventId, status: { $ne: RegistrationStatus.REJECTED } }
+      });
+      const count = regsResult.documents.length;
+
+      if (count >= event.capacity) {
+        console.warn("Event is full");
+        return null;
+      }
+
+      if (event.isRegistrationOpen === false) {
+        console.warn("Registration is closed");
+        return null; // Implicitly fail
+      }
+
       const newReg = { ...reg, id: newId };
       await mongoRequest('insertOne', 'registrations', { document: newReg });
       return newReg;
@@ -204,6 +274,29 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
 
   if (USE_FIREBASE_STORAGE) {
     try {
+      // Simple Capacity Check for Firebase
+      // Note: Ideally use transactions for concurrency safety
+      const eventDoc = await getDoc(doc(db, "events", reg.eventId));
+      if (!eventDoc.exists()) return null;
+
+      const eventData = eventDoc.data() as Event;
+      const q = query(
+        collection(db, "registrations"),
+        where("eventId", "==", reg.eventId),
+        where("status", "!=", RegistrationStatus.REJECTED)
+      );
+      const snapshot = await getDocs(q);
+
+      if (snapshot.size >= eventData.capacity) {
+        console.warn("Event is full");
+        return null;
+      }
+
+      if (eventData.isRegistrationOpen === false) {
+        console.warn("Registration is closed");
+        return null;
+      }
+
       const docRef = await addDoc(collection(db, "registrations"), reg);
       return { ...reg, id: docRef.id } as Registration;
     } catch (e) {
@@ -212,8 +305,29 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
     }
   }
 
-  const newReg = { ...reg, id: newId };
+  // Local Storage Fallback
+  const events = await getEvents();
+  const event = events.find(e => e.id === reg.eventId);
+
+  if (!event) {
+    console.error("Event not found");
+    return null;
+  }
+
   const regs = await getRegistrations();
+  const eventRegs = regs.filter(r => r.eventId === reg.eventId && r.status !== RegistrationStatus.REJECTED);
+
+  if (eventRegs.length >= event.capacity) {
+    console.warn("Event is full");
+    return null;
+  }
+
+  if (event.isRegistrationOpen === false) {
+    console.warn("Registration is closed");
+    return null;
+  }
+
+  const newReg = { ...reg, id: newId };
   localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify([...regs, newReg]));
   return newReg;
 };
@@ -364,7 +478,7 @@ const getUserProfile = async (uid: string): Promise<User | null> => {
 };
 
 // Save user profile
-const saveUserProfile = async (user: User): Promise<void> => {
+export const saveUserProfile = async (user: User): Promise<void> => {
   if (USE_MONGO) {
     try {
       // Check if exists first to avoid duplicates if using simplistic insert
@@ -559,4 +673,52 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
   }
 
   return () => { };
+};
+
+export const resetUserPassword = async (email: string): Promise<{ success: boolean; message: string }> => {
+  if (USE_FIREBASE_AUTH) {
+    console.log(`[Reset Password] Using Firebase Auth for ${email}.`);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      console.log("[Reset Password] Firebase sendPasswordResetEmail completed successfully.");
+      return {
+        success: true,
+        message: "Link sent! If you don't see it, check Spam or verify you didn't sign up with Google."
+      };
+    } catch (error: any) {
+      console.error("[Reset Password] Firebase Error:", error);
+      let msg = "Failed to send reset email.";
+      if (error.code === 'auth/user-not-found') msg = "No account found with this email.";
+      if (error.code === 'auth/invalid-email') msg = "Invalid email address.";
+      return { success: false, message: msg };
+    }
+  }
+
+  // Local/Mock Implementation
+  console.log(`[Reset Password] Attempting reset for: ${email}`);
+
+  let exists = false;
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('findOne', 'users', { filter: { email } });
+      console.log("[Reset Password] Mongo Find Result:", result);
+      exists = !!result.document;
+    } catch (e) {
+      console.error("[Reset Password] Mongo Error:", e);
+    }
+  } else {
+    const stored = localStorage.getItem(STORAGE_KEYS.USERS);
+    const users: User[] = stored ? JSON.parse(stored) : [];
+    exists = users.some(u => u.email === email);
+    console.log("[Reset Password] Local Storage Check:", exists);
+  }
+
+  if (exists) {
+    const resetLink = `http://localhost:3000/reset-password-demo?email=${encodeURIComponent(email)}&token=${crypto.randomUUID()}`;
+    console.log(`%c[MOCK EMAIL] Password Reset Link: ${resetLink}`, "color: #4f46e5; font-weight: bold; font-size: 14px;");
+    return { success: true, message: "DEMO MODE: Reset link logged to browser console (F12)." };
+  }
+
+  console.warn(`[Reset Password] User with email ${email} not found.`);
+  return { success: false, message: `User ${email} not found (Demo Mode).` };
 };

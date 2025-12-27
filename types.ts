@@ -8,15 +8,27 @@ export interface User {
   role: Role;
 }
 
+export interface CustomQuestion {
+  id: string;
+  question: string;
+  type: 'text' | 'select' | 'boolean';
+  required: boolean;
+  options?: string[]; // For 'select' type, comma separated in UI?
+}
+
 export interface Event {
   id: string;
   title: string;
   description: string;
-  date: string;
+  date: string; // Start Date/Time
+  endDate: string; // End Date/Time
   location: string;
+  locationType?: 'online' | 'offline';
   capacity: number;
   imageUrl: string;
   organizerId: string;
+  isRegistrationOpen?: boolean;
+  customQuestions?: CustomQuestion[];
 }
 
 export enum RegistrationStatus {
@@ -34,6 +46,7 @@ export interface Registration {
   attended: boolean;
   attendanceTime?: string;
   registeredAt: string;
+  answers?: Record<string, string>; // questionId -> answer
 }
 
 export type Tab = 'browse' | 'my-tickets' | 'organizer';
