@@ -23,11 +23,11 @@ import { STORAGE_KEYS } from '../constants';
 
 // --- Configuration ---
 
-// MongoDB Atlas Data API Configuration (Proxied via Local Server)
+// MongoDB Atlas Data API Configuration (Proxied via Local Server or Vercel Function)
 const MONGO_CONFIG = {
-  // When using local proxy, we ignore the external Endpoint/Key and point to local
-  endpoint: 'http://localhost:5000/api',
-  apiKey: 'dummy', // Not needed for local proxy
+  // When using Vercel, this relative path maps to the serverless function under api/
+  endpoint: '/api/action',
+  apiKey: 'dummy',
   dataSource: 'Cluster0',
   database: 'event_horizon',
 };
@@ -43,8 +43,9 @@ const USE_FIREBASE_AUTH = isFirebaseConfigured; // Can use Firebase Auth even wi
 // --- Helper Functions for MongoDB Data API ---
 
 async function mongoRequest(action: string, collection: string, body: any = {}) {
-  // Call our local proxy
-  const response = await fetch(`${MONGO_CONFIG.endpoint}/action/${action}`, {
+  // Call our proxy/serverless function
+  // Structure: /api/action/<action_name>
+  const response = await fetch(`${MONGO_CONFIG.endpoint}/${action}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
