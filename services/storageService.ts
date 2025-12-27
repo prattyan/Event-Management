@@ -37,7 +37,8 @@ const MONGO_CONFIG = {
 // Since this is client code, we check if we are in "Mongo Mode". 
 // We'll assume if the user asked for this, we want to try the proxy.
 const USE_MONGO = true;
-const USE_FIREBASE = isFirebaseConfigured && !USE_MONGO;
+const USE_FIREBASE_STORAGE = isFirebaseConfigured && !USE_MONGO;
+const USE_FIREBASE_AUTH = isFirebaseConfigured; // Can use Firebase Auth even with Mongo Storage
 
 // --- Helper Functions for MongoDB Data API ---
 
@@ -75,7 +76,7 @@ export const getEvents = async (): Promise<Event[]> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const querySnapshot = await getDocs(collection(db, "events"));
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
@@ -104,7 +105,7 @@ export const saveEvent = async (event: Omit<Event, 'id'>): Promise<Event | null>
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const docRef = await addDoc(collection(db, "events"), event);
       return { ...event, id: docRef.id } as Event;
@@ -135,7 +136,7 @@ export const updateEvent = async (event: Event): Promise<boolean> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const eventRef = doc(db, "events", event.id);
       const { id, ...data } = event;
@@ -171,7 +172,7 @@ export const getRegistrations = async (): Promise<Registration[]> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const querySnapshot = await getDocs(collection(db, "registrations"));
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Registration));
@@ -199,7 +200,7 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const docRef = await addDoc(collection(db, "registrations"), reg);
       return { ...reg, id: docRef.id } as Registration;
@@ -227,7 +228,7 @@ export const deleteRegistration = async (id: string): Promise<boolean> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       await deleteDoc(doc(db, "registrations", id));
       return true;
@@ -257,7 +258,7 @@ export const updateRegistrationStatus = async (id: string, status: RegistrationS
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const regRef = doc(db, "registrations", id);
       await updateDoc(regRef, { status });
@@ -294,7 +295,7 @@ export const markAttendance = async (id: string): Promise<boolean> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const regRef = doc(db, "registrations", id);
       const regSnap = await getDoc(regRef);
@@ -345,7 +346,7 @@ const getUserProfile = async (uid: string): Promise<User | null> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       const userDoc = await getDoc(doc(db, "users", uid));
       return userDoc.exists() ? (userDoc.data() as User) : null;
@@ -380,7 +381,7 @@ const saveUserProfile = async (user: User): Promise<void> => {
     }
   }
 
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_STORAGE) {
     try {
       await setDoc(doc(db, "users", user.id), user);
       return;
@@ -402,7 +403,7 @@ const saveUserProfile = async (user: User): Promise<void> => {
 };
 
 export const registerUser = async (user: Omit<User, 'id'>, password: string): Promise<User | null> => {
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_AUTH) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, user.email, password);
       const uid = userCredential.user.uid;
@@ -445,7 +446,7 @@ export const registerUser = async (user: Omit<User, 'id'>, password: string): Pr
 };
 
 export const loginUser = async (email: string, password: string): Promise<User | null> => {
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_AUTH) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       return await getUserProfile(userCredential.user.uid);
@@ -481,7 +482,7 @@ export const loginUser = async (email: string, password: string): Promise<User |
 };
 
 export const logoutUser = async (): Promise<void> => {
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_AUTH) {
     await firebaseSignOut(auth);
   }
 
@@ -490,7 +491,7 @@ export const logoutUser = async (): Promise<void> => {
 };
 
 export const subscribeToAuth = (callback: (user: User | null) => void) => {
-  if (USE_FIREBASE) {
+  if (USE_FIREBASE_AUTH) {
     return onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userProfile = await getUserProfile(firebaseUser.uid);
