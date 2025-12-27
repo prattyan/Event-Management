@@ -18,3 +18,11 @@ View your app in AI Studio: https://ai.studio/apps/drive/1BWlNpxTT3asdv0NwgaUxHu
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Database Setup
+
+This application supports **MongoDB Atlas** (via Data API) or **Firebase**.
+
+- To use **MongoDB**: See [MONGODB_SETUP.md](./MONGODB_SETUP.md)
+- To use **Firebase**: Add your config to `.env` (API_KEY, etc.)
+- default: **Local Storage** (if no cloud DB configured)

@@ -32,6 +32,7 @@ export interface Registration {
   participantEmail: string;
   status: RegistrationStatus;
   attended: boolean;
+  attendanceTime?: string;
   registeredAt: string;
 }
 

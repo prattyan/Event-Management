@@ -1,20 +1,21 @@
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser
 } from "firebase/auth";
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  query, 
-  where, 
-  setDoc, 
-  getDoc 
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+  setDoc,
+  getDoc,
+  deleteDoc
 } from "firebase/firestore";
 import { auth, db, isFirebaseConfigured } from "../firebaseConfig";
 import { Event, Registration, RegistrationStatus, User } from '../types';
@@ -22,32 +23,32 @@ import { STORAGE_KEYS } from '../constants';
 
 // --- Configuration ---
 
-// MongoDB Atlas Data API Configuration
+// MongoDB Atlas Data API Configuration (Proxied via Local Server)
 const MONGO_CONFIG = {
-  apiKey: process.env.MONGODB_API_KEY,
-  endpoint: process.env.MONGODB_ENDPOINT,
-  dataSource: process.env.MONGODB_DATA_SOURCE || 'Cluster0',
-  database: process.env.MONGODB_DB_NAME || 'event_horizon',
+  // When using local proxy, we ignore the external Endpoint/Key and point to local
+  endpoint: 'http://localhost:5000/api',
+  apiKey: 'dummy', // Not needed for local proxy
+  dataSource: 'Cluster0',
+  database: 'event_horizon',
 };
 
 // Hierarchy: MongoDB > Firebase > Local Storage
-const USE_MONGO = !!(MONGO_CONFIG.apiKey && MONGO_CONFIG.endpoint);
+// If we have a URI in env (loaded by server) or we are just told to use it.
+// Since this is client code, we check if we are in "Mongo Mode". 
+// We'll assume if the user asked for this, we want to try the proxy.
+const USE_MONGO = true;
 const USE_FIREBASE = isFirebaseConfigured && !USE_MONGO;
 
 // --- Helper Functions for MongoDB Data API ---
 
 async function mongoRequest(action: string, collection: string, body: any = {}) {
-  if (!USE_MONGO) throw new Error("MongoDB not configured");
-  
+  // Call our local proxy
   const response = await fetch(`${MONGO_CONFIG.endpoint}/action/${action}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'api-key': MONGO_CONFIG.apiKey!,
     },
     body: JSON.stringify({
-      dataSource: MONGO_CONFIG.dataSource,
-      database: MONGO_CONFIG.database,
       collection: collection,
       ...body
     })
@@ -83,7 +84,7 @@ export const getEvents = async (): Promise<Event[]> => {
       return [];
     }
   }
-  
+
   // Fallback / Local Storage
   const stored = localStorage.getItem(STORAGE_KEYS.EVENTS);
   return stored ? JSON.parse(stored) : [];
@@ -123,7 +124,7 @@ export const saveEvent = async (event: Omit<Event, 'id'>): Promise<Event | null>
 export const updateEvent = async (event: Event): Promise<boolean> => {
   if (USE_MONGO) {
     try {
-      await mongoRequest('updateOne', 'events', { 
+      await mongoRequest('updateOne', 'events', {
         filter: { id: event.id },
         update: { $set: event }
       });
@@ -214,11 +215,39 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
   return newReg;
 };
 
+export const deleteRegistration = async (id: string): Promise<boolean> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('deleteOne', 'registrations', { filter: { id: id } });
+      console.log("Delete result:", result);
+      return result.deletedCount > 0;
+    } catch (e) {
+      console.error("Mongo delete registration failed", e);
+      return false;
+    }
+  }
+
+  if (USE_FIREBASE) {
+    try {
+      await deleteDoc(doc(db, "registrations", id));
+      return true;
+    } catch (e) {
+      console.error("Firebase deleteRegistration failed:", e);
+      return false;
+    }
+  }
+
+  const regs = await getRegistrations();
+  const filtered = regs.filter(r => r.id !== id);
+  localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(filtered));
+  return true;
+};
+
 export const updateRegistrationStatus = async (id: string, status: RegistrationStatus): Promise<void> => {
   if (USE_MONGO) {
     try {
       // Note: Data API updateOne filter matches our custom 'id' field, not necessarily _id
-      await mongoRequest('updateOne', 'registrations', { 
+      await mongoRequest('updateOne', 'registrations', {
         filter: { id: id },
         update: { $set: { status: status } }
       });
@@ -244,15 +273,17 @@ export const updateRegistrationStatus = async (id: string, status: RegistrationS
 };
 
 export const markAttendance = async (id: string): Promise<boolean> => {
+  const timestamp = new Date().toISOString();
+
   if (USE_MONGO) {
     try {
       const result = await mongoRequest('findOne', 'registrations', { filter: { id: id } });
       const reg = result.document;
-      
+
       if (reg && reg.status === RegistrationStatus.APPROVED) {
         await mongoRequest('updateOne', 'registrations', {
           filter: { id: id },
-          update: { $set: { attended: true } }
+          update: { $set: { attended: true, attendanceTime: timestamp } }
         });
         return true;
       }
@@ -267,11 +298,11 @@ export const markAttendance = async (id: string): Promise<boolean> => {
     try {
       const regRef = doc(db, "registrations", id);
       const regSnap = await getDoc(regRef);
-      
+
       if (regSnap.exists()) {
         const reg = regSnap.data() as Registration;
         if (reg.status === RegistrationStatus.APPROVED) {
-          await updateDoc(regRef, { attended: true });
+          await updateDoc(regRef, { attended: true, attendanceTime: timestamp });
           return true;
         }
       }
@@ -288,12 +319,12 @@ export const markAttendance = async (id: string): Promise<boolean> => {
     if (r.id === id) {
       if (r.status === RegistrationStatus.APPROVED) {
         found = true;
-        return { ...r, attended: true };
+        return { ...r, attended: true, attendanceTime: timestamp };
       }
     }
     return r;
   });
-  
+
   if (found) {
     localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(updated));
   }
@@ -336,12 +367,12 @@ const saveUserProfile = async (user: User): Promise<void> => {
       // Check if exists first to avoid duplicates if using simplistic insert
       const existing = await getUserProfile(user.id);
       if (!existing) {
-         await mongoRequest('insertOne', 'users', { document: user });
+        await mongoRequest('insertOne', 'users', { document: user });
       } else {
-         await mongoRequest('updateOne', 'users', { 
-           filter: { id: user.id }, 
-           update: { $set: user } 
-         });
+        await mongoRequest('updateOne', 'users', {
+          filter: { id: user.id },
+          update: { $set: user }
+        });
       }
       return;
     } catch (e) {
@@ -375,12 +406,12 @@ export const registerUser = async (user: Omit<User, 'id'>, password: string): Pr
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, user.email, password);
       const uid = userCredential.user.uid;
-      
+
       const userData: User = {
         ...user,
         id: uid
       };
-      
+
       await saveUserProfile(userData);
       return userData;
     } catch (error) {
@@ -390,26 +421,26 @@ export const registerUser = async (user: Omit<User, 'id'>, password: string): Pr
   }
 
   // Common Logic for Mongo or Local (No Auth Provider)
-  
+
   // Check if email already exists
   let existingUser = null;
   if (USE_MONGO) {
-      const result = await mongoRequest('findOne', 'users', { filter: { email: user.email } });
-      existingUser = result.document;
+    const result = await mongoRequest('findOne', 'users', { filter: { email: user.email } });
+    existingUser = result.document;
   } else {
-      const stored = localStorage.getItem(STORAGE_KEYS.USERS);
-      const users: User[] = stored ? JSON.parse(stored) : [];
-      existingUser = users.find(u => u.email === user.email);
+    const stored = localStorage.getItem(STORAGE_KEYS.USERS);
+    const users: User[] = stored ? JSON.parse(stored) : [];
+    existingUser = users.find(u => u.email === user.email);
   }
 
   if (existingUser) return null;
-  
+
   const newUser = { ...user, id: crypto.randomUUID(), password }; // Storing password for custom auth
   await saveUserProfile(newUser);
-  
+
   // Auto-login for local/mongo mode persistence
   localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newUser));
-  
+
   return newUser;
 };
 
@@ -426,14 +457,14 @@ export const loginUser = async (email: string, password: string): Promise<User |
 
   // Common Logic for Mongo or Local
   let user: User | null = null;
-  
+
   if (USE_MONGO) {
     try {
-      const result = await mongoRequest('findOne', 'users', { 
-        filter: { email: email, password: password } 
+      const result = await mongoRequest('findOne', 'users', {
+        filter: { email: email, password: password }
       });
       user = result.document || null;
-    } catch(e) {
+    } catch (e) {
       console.error("Mongo Login Error", e);
     }
   } else {
@@ -441,11 +472,11 @@ export const loginUser = async (email: string, password: string): Promise<User |
     const users: User[] = stored ? JSON.parse(stored) : [];
     user = users.find(u => u.email === email && u.password === password) || null;
   }
-  
+
   if (user) {
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
   }
-  
+
   return user;
 };
 
@@ -453,7 +484,7 @@ export const logoutUser = async (): Promise<void> => {
   if (USE_FIREBASE) {
     await firebaseSignOut(auth);
   }
-  
+
   // Clear local session regardless of mode
   localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
 };
@@ -477,11 +508,11 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
       const user = JSON.parse(storedUser);
       // Verify user still exists in "database" to be safe
       getUserProfile(user.id).then(verified => {
-          if (verified) callback(verified);
-          else {
-              localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-              callback(null);
-          }
+        if (verified) callback(verified);
+        else {
+          localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+          callback(null);
+        }
       });
     } catch (e) {
       localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
@@ -490,6 +521,6 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
   } else {
     callback(null);
   }
-  
-  return () => {};
+
+  return () => { };
 };
