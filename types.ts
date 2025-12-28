@@ -35,11 +35,13 @@ export enum RegistrationStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
+  WAITLISTED = 'WAITLISTED',
 }
 
 export interface Registration {
   id: string;
   eventId: string;
+  participantId: string;
   participantName: string;
   participantEmail: string;
   status: RegistrationStatus;
@@ -55,4 +57,24 @@ export interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info';
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning';
+  read: boolean;
+  createdAt: string;
+  link?: string;
+}
+
+export interface Message {
+  id: string;
+  eventId: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
 }

@@ -44,10 +44,20 @@
       /* slate-600 */
     }
   </style>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#4f46e5" />
+</head>
 
 <body class="bg-slate-950 text-slate-100 antialiased">
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js');
+      });
+    }
+  </script>
   <script>
     tailwind.config = {
       theme: {

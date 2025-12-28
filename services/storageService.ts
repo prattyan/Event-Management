@@ -253,17 +253,10 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
       });
       const count = regsResult.documents.length;
 
-      if (count >= event.capacity) {
-        console.warn("Event is full");
-        return null;
-      }
+      const isFull = count >= event.capacity;
+      const status = isFull ? RegistrationStatus.WAITLISTED : RegistrationStatus.PENDING;
 
-      if (event.isRegistrationOpen === false) {
-        console.warn("Registration is closed");
-        return null; // Implicitly fail
-      }
-
-      const newReg = { ...reg, id: newId };
+      const newReg = { ...reg, id: newId, status: status };
       await mongoRequest('insertOne', 'registrations', { document: newReg });
       return newReg;
     } catch (e) {
@@ -287,18 +280,12 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
       );
       const snapshot = await getDocs(q);
 
-      if (snapshot.size >= eventData.capacity) {
-        console.warn("Event is full");
-        return null;
-      }
+      const isFull = snapshot.size >= eventData.capacity;
+      const status = isFull ? RegistrationStatus.WAITLISTED : RegistrationStatus.PENDING;
 
-      if (eventData.isRegistrationOpen === false) {
-        console.warn("Registration is closed");
-        return null;
-      }
-
-      const docRef = await addDoc(collection(db, "registrations"), reg);
-      return { ...reg, id: docRef.id } as Registration;
+      const newRegData = { ...reg, status: status };
+      const docRef = await addDoc(collection(db, "registrations"), newRegData);
+      return { ...newRegData, id: docRef.id } as Registration;
     } catch (e) {
       console.error("Firebase addRegistration failed:", e);
       return null;
@@ -317,26 +304,43 @@ export const addRegistration = async (reg: Omit<Registration, 'id'>): Promise<Re
   const regs = await getRegistrations();
   const eventRegs = regs.filter(r => r.eventId === reg.eventId && r.status !== RegistrationStatus.REJECTED);
 
-  if (eventRegs.length >= event.capacity) {
-    console.warn("Event is full");
-    return null;
-  }
+  const isFull = eventRegs.length >= event.capacity;
+  const status = isFull ? RegistrationStatus.WAITLISTED : RegistrationStatus.PENDING;
 
-  if (event.isRegistrationOpen === false) {
-    console.warn("Registration is closed");
-    return null;
-  }
-
-  const newReg = { ...reg, id: newId };
+  const newReg = { ...reg, id: newId, status: status };
   localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify([...regs, newReg]));
   return newReg;
 };
 
 export const deleteRegistration = async (id: string): Promise<boolean> => {
+  let eventIdToCleanup: string | null = null;
+
   if (USE_MONGO) {
     try {
+      const regResult = await mongoRequest('findOne', 'registrations', { filter: { id: id } });
+      if (regResult.document) {
+        eventIdToCleanup = regResult.document.eventId;
+      }
+
       const result = await mongoRequest('deleteOne', 'registrations', { filter: { id: id } });
       console.log("Delete result:", result);
+
+      if (result.deletedCount > 0 && eventIdToCleanup) {
+        // Promote next person from waitlist
+        const waitlisted = await mongoRequest('find', 'registrations', {
+          filter: { eventId: eventIdToCleanup, status: RegistrationStatus.WAITLISTED },
+          sort: { registeredAt: 1 },
+          limit: 1
+        });
+
+        if (waitlisted.documents && waitlisted.documents.length > 0) {
+          const nextInLine = waitlisted.documents[0];
+          await mongoRequest('updateOne', 'registrations', {
+            filter: { id: nextInLine.id || nextInLine._id },
+            update: { $set: { status: RegistrationStatus.PENDING } }
+          });
+        }
+      }
       return result.deletedCount > 0;
     } catch (e) {
       console.error("Mongo delete registration failed", e);
@@ -346,7 +350,29 @@ export const deleteRegistration = async (id: string): Promise<boolean> => {
 
   if (USE_FIREBASE_STORAGE) {
     try {
+      const regSnap = await getDoc(doc(db, "registrations", id));
+      if (regSnap.exists()) {
+        eventIdToCleanup = (regSnap.data() as Registration).eventId;
+      }
+
       await deleteDoc(doc(db, "registrations", id));
+
+      if (eventIdToCleanup) {
+        const q = query(
+          collection(db, "registrations"),
+          where("eventId", "==", eventIdToCleanup),
+          where("status", "==", RegistrationStatus.WAITLISTED)
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          // Find oldest one manually since Firestore query sort can be tricky with composite indexes
+          const waitlistedDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Registration));
+          waitlistedDocs.sort((a, b) => new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime());
+
+          const nextInLine = waitlistedDocs[0];
+          await updateDoc(doc(db, "registrations", nextInLine.id), { status: RegistrationStatus.PENDING });
+        }
+      }
       return true;
     } catch (e) {
       console.error("Firebase deleteRegistration failed:", e);
@@ -355,7 +381,18 @@ export const deleteRegistration = async (id: string): Promise<boolean> => {
   }
 
   const regs = await getRegistrations();
+  const regToDelete = regs.find(r => r.id === id);
+  if (regToDelete) eventIdToCleanup = regToDelete.eventId;
+
   const filtered = regs.filter(r => r.id !== id);
+
+  if (eventIdToCleanup) {
+    const waitlistedIndex = filtered.findIndex(r => r.eventId === eventIdToCleanup && r.status === RegistrationStatus.WAITLISTED);
+    if (waitlistedIndex !== -1) {
+      filtered[waitlistedIndex].status = RegistrationStatus.PENDING;
+    }
+  }
+
   localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(filtered));
   return true;
 };
@@ -721,4 +758,150 @@ export const resetUserPassword = async (email: string): Promise<{ success: boole
 
   console.warn(`[Reset Password] User with email ${email} not found.`);
   return { success: false, message: `User ${email} not found (Demo Mode).` };
+};
+
+// --- Notifications ---
+
+export const getNotifications = async (userId: string): Promise<any[]> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('find', 'notifications', { filter: { userId: userId } });
+      return result.documents.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) {
+      console.error("Mongo fetch notifications failed", e);
+      return [];
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      const q = query(
+        collection(db, "notifications"),
+        where("userId", "==", userId)
+      );
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) {
+      console.error("Firebase getNotifications failed:", e);
+      return [];
+    }
+  }
+
+  const stored = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS || 'notifications');
+  const notifications = stored ? JSON.parse(stored) : [];
+  return notifications.filter((n: any) => n.userId === userId).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
+export const addNotification = async (notification: Omit<any, 'id'>): Promise<void> => {
+  const newId = crypto.randomUUID();
+  const newNotification = { ...notification, id: newId, createdAt: new Date().toISOString(), read: false };
+
+  if (USE_MONGO) {
+    try {
+      await mongoRequest('insertOne', 'notifications', { document: newNotification });
+      return;
+    } catch (e) {
+      console.error("Mongo add notification failed", e);
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      await addDoc(collection(db, "notifications"), newNotification);
+      return;
+    } catch (e) {
+      console.error("Firebase addNotification failed:", e);
+    }
+  }
+
+  const stored = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS || 'notifications');
+  const notifications = stored ? JSON.parse(stored) : [];
+  localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS || 'notifications', JSON.stringify([...notifications, newNotification]));
+};
+
+export const markNotificationRead = async (id: string): Promise<void> => {
+  if (USE_MONGO) {
+    try {
+      await mongoRequest('updateOne', 'notifications', {
+        filter: { id: id },
+        update: { $set: { read: true } }
+      });
+      return;
+    } catch (e) {
+      console.error("Mongo mark notification read failed", e);
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      await updateDoc(doc(db, "notifications", id), { read: true });
+      return;
+    } catch (e) {
+      console.error("Firebase markNotificationRead failed:", e);
+    }
+  }
+
+  const stored = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS || 'notifications');
+  const notifications = stored ? JSON.parse(stored) : [];
+  const updated = notifications.map((n: any) => n.id === id ? { ...n, read: true } : n);
+  localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS || 'notifications', JSON.stringify(updated));
+};
+
+// --- Discussion Messages ---
+
+export const getMessages = async (eventId: string): Promise<any[]> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('find', 'messages', { filter: { eventId: eventId } });
+      return result.documents.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    } catch (e) {
+      console.error("Mongo fetch messages failed", e);
+      return [];
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      const q = query(
+        collection(db, "messages"),
+        where("eventId", "==", eventId)
+      );
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    } catch (e) {
+      console.error("Firebase getMessages failed:", e);
+      return [];
+    }
+  }
+
+  const stored = localStorage.getItem('eh_messages');
+  const messages = stored ? JSON.parse(stored) : [];
+  return messages.filter((m: any) => m.eventId === eventId).sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+};
+
+export const addMessage = async (message: Omit<any, 'id'>): Promise<void> => {
+  const newId = crypto.randomUUID();
+  const newMessage = { ...message, id: newId, createdAt: new Date().toISOString() };
+
+  if (USE_MONGO) {
+    try {
+      await mongoRequest('insertOne', 'messages', { document: newMessage });
+      return;
+    } catch (e) {
+      console.error("Mongo add message failed", e);
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      await addDoc(collection(db, "messages"), newMessage);
+      return;
+    } catch (e) {
+      console.error("Firebase addMessage failed:", e);
+    }
+  }
+
+  const stored = localStorage.getItem('eh_messages');
+  const messages = stored ? JSON.parse(stored) : [];
+  localStorage.setItem('eh_messages', JSON.stringify([...messages, newMessage]));
 };

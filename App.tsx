@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import QRCode from 'react-qr-code';
 import {
-  Calendar, MapPin, Plus, QrCode, CheckCircle,
-  XCircle, Sparkles, ScanLine, LogOut, ArrowRight, UserCircle, KeyRound, Mail, Loader2, Users, ChevronRight, Bell, Send, Image as ImageIcon, Upload, Edit, Filter, Download, Trash2, X, Check, Menu
+  Calendar, MapPin, Plus, QrCode, CheckCircle, XCircle, Sparkles, ScanLine,
+  Search, Users, Clock, X, Check, ChevronRight, ChevronLeft, Trash2, Edit,
+  Save, Upload, Image as ImageIcon, Loader2, Menu, LogOut, Download, Bell,
+  Send, MessageSquare, UserCircle, KeyRound, Mail, Filter
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
@@ -12,7 +14,9 @@ import {
   getEvents, saveEvent, updateEvent, getRegistrations, addRegistration,
   updateRegistrationStatus, markAttendance, deleteRegistration, deleteEvent,
   loginUser, registerUser, subscribeToAuth, logoutUser,
-  loginWithGoogle, saveUserProfile, resetUserPassword
+  loginWithGoogle, saveUserProfile, resetUserPassword,
+  getNotifications, addNotification, markNotificationRead,
+  getMessages, addMessage
 } from './services/storageService';
 import { generateEventDescription } from './services/geminiService';
 import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificationService';
@@ -40,12 +44,14 @@ const ToastContainer = ({ toasts }: { toasts: Toast[] }) => (
 
 const Badge = ({ status }: { status: RegistrationStatus }) => {
   const styles = {
-    [RegistrationStatus.APPROVED]: 'bg-green-900/30 text-green-400 border-green-800',
-    [RegistrationStatus.PENDING]: 'bg-amber-900/30 text-amber-400 border-amber-800',
-    [RegistrationStatus.REJECTED]: 'bg-red-900/30 text-red-400 border-red-800',
+    [RegistrationStatus.PENDING]: 'bg-amber-900/40 text-amber-500 border-amber-800',
+    [RegistrationStatus.APPROVED]: 'bg-green-900/40 text-green-500 border-green-800',
+    [RegistrationStatus.REJECTED]: 'bg-red-900/40 text-red-500 border-red-800',
+    [RegistrationStatus.WAITLISTED]: 'bg-indigo-900/40 text-indigo-400 border-indigo-800',
   };
+
   return (
-    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${styles[status]}`}>
+    <span className={`px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${styles[status]}`}>
       {status}
     </span>
   );
@@ -146,7 +152,11 @@ export default function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -156,12 +166,14 @@ export default function App() {
   const [selectedEventForDetails, setSelectedEventForDetails] = useState<Event | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<Registration | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [detailsTab, setDetailsTab] = useState<'info' | 'discussion'>('info');
 
   // Organizer View State
   const [organizerSelectedEventId, setOrganizerSelectedEventId] = useState<string | null>(null);
   const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | RegistrationStatus>('ALL');
   const [attendanceFilter, setAttendanceFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL');
+  const [selectedRegistrationIds, setSelectedRegistrationIds] = useState<string[]>([]);
 
   // Form States
   const [newEvent, setNewEvent] = useState<{
@@ -227,12 +239,19 @@ export default function App() {
   const loadData = async () => {
     setDataLoading(true);
     try {
-      const [loadedEvents, loadedRegs] = await Promise.all([
-        getEvents(),
-        getRegistrations()
-      ]);
-      setEvents(loadedEvents);
-      setRegistrations(loadedRegs);
+      if (currentUser) {
+        const [loadedEvents, loadedRegs, loadedNotifs] = await Promise.all([
+          getEvents(),
+          getRegistrations(),
+          getNotifications(currentUser.id)
+        ]);
+        setEvents(loadedEvents);
+        setRegistrations(loadedRegs);
+        setNotifications(loadedNotifs);
+      } else {
+        const loadedEvents = await getEvents();
+        setEvents(loadedEvents);
+      }
     } catch (e) {
       addToast('Failed to load data', 'error');
     } finally {
@@ -245,6 +264,20 @@ export default function App() {
       loadData();
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    const fetchMessages = async () => {
+      if (selectedEventForDetails) {
+        setIsMessagesLoading(true);
+        const msgs = await getMessages(selectedEventForDetails.id);
+        setMessages(msgs);
+        setIsMessagesLoading(false);
+      } else {
+        setMessages([]);
+      }
+    };
+    fetchMessages();
+  }, [selectedEventForDetails]);
 
   const addToast = (message: string, type: Toast['type'] = 'info') => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -500,6 +533,7 @@ export default function App() {
 
       const regData = {
         eventId: selectedEventForReg.id,
+        participantId: currentUser.id,
         participantName: currentUser.name,
         participantEmail: email,
         status: RegistrationStatus.PENDING,
@@ -514,9 +548,13 @@ export default function App() {
         await loadData();
         setSelectedEventForReg(null);
         setRegistrationAnswers({});
-        addToast('Registration submitted! Waiting for approval.', 'success');
+        if (created.status === RegistrationStatus.WAITLISTED) {
+          addToast('Space is full, you have been added to the waitlist.', 'info');
+        } else {
+          addToast('Registration submitted! Waiting for approval.', 'success');
+        }
       } else {
-        addToast('Registration failed or event is full/closed', 'error');
+        addToast('Registration failed or event is closed', 'error');
       }
     } catch (error) {
       console.error(error);
@@ -539,6 +577,17 @@ export default function App() {
     if (reg && event) {
       addToast(`Updating status and notifying user...`, 'info');
       await sendStatusUpdateEmail(reg.participantEmail, reg.participantName, event.title, status);
+
+      // Add In-App Notification
+      await addNotification({
+        userId: reg.participantId,
+        title: status === RegistrationStatus.APPROVED ? 'Registration Approved!' : 'Registration Update',
+        message: status === RegistrationStatus.APPROVED
+          ? `You're in! Your registration for "${event.title}" was approved.`
+          : `Your registration status for "${event.title}" has been updated to ${status}.`,
+        type: status === RegistrationStatus.APPROVED ? 'success' : 'info',
+        link: 'my-tickets'
+      });
     }
 
     // 3. Refresh Data
@@ -624,6 +673,24 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     addToast('CSV exported successfully', 'success');
+  };
+
+  const [newMessageText, setNewMessageText] = useState('');
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEventForDetails || !currentUser || !newMessageText.trim()) return;
+
+    const messageData = {
+      eventId: selectedEventForDetails.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      content: newMessageText.trim()
+    };
+
+    await addMessage(messageData);
+    setNewMessageText('');
+    const msgs = await getMessages(selectedEventForDetails.id);
+    setMessages(msgs);
   };
 
   const handleManualAttendance = async (regId: string) => {
@@ -1025,7 +1092,75 @@ export default function App() {
           )}
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="relative">
+            <button
+              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              className={`p-2 rounded-lg transition-colors relative ${isNotificationsOpen ? 'bg-slate-800 text-indigo-400' : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800'}`}
+            >
+              <Bell className="w-5 h-5" />
+              {notifications.filter(n => !n.read).length > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-slate-900"></span>
+              )}
+            </button>
+
+            {isNotificationsOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setIsNotificationsOpen(false)}></div>
+                <div className="absolute right-0 mt-2 w-72 xs:w-80 bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 py-2 z-20 animate-in fade-in zoom-in-95 origin-top-right overflow-hidden flex flex-col max-h-[440px]">
+                  <div className="px-4 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+                    <h3 className="text-sm font-bold text-white">Notifications</h3>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{notifications.length} Total</span>
+                  </div>
+                  <div className="overflow-y-auto custom-scrollbar flex-1 bg-slate-900">
+                    {notifications.length > 0 ? (
+                      notifications.map(notif => (
+                        <div
+                          key={notif.id}
+                          onClick={async () => {
+                            if (!notif.read) {
+                              await markNotificationRead(notif.id);
+                              loadData();
+                            }
+                            if (notif.link) {
+                              setActiveTab(notif.link as Tab);
+                              setIsNotificationsOpen(false);
+                            }
+                          }}
+                          className={`px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors relative ${!notif.read ? 'bg-indigo-600/5' : ''}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notif.type === 'success' ? 'bg-green-500' : notif.type === 'warning' ? 'bg-amber-500' : 'bg-indigo-500'} ${notif.read ? 'opacity-0' : ''}`}></div>
+                            <div className="flex-1">
+                              <p className={`text-sm ${notif.read ? 'text-slate-300' : 'text-white font-semibold'}`}>{notif.title}</p>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2">{notif.message}</p>
+                              <p className="text-[10px] text-slate-500 mt-2 mt-auto">{format(new Date(notif.createdAt), 'MMM d, h:mm a')}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-12 text-center">
+                        <Bell className="w-8 h-8 text-slate-800 mx-auto mb-2" />
+                        <p className="text-sm text-slate-500">No notifications yet</p>
+                      </div>
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="px-4 py-2 border-t border-slate-800 bg-slate-900/50">
+                      <button
+                        onClick={() => setIsNotificationsOpen(false)}
+                        className="text-xs text-indigo-400 font-medium hover:text-indigo-300 w-full text-center"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="hidden md:flex flex-col items-end">
             <span className="text-sm font-medium text-slate-200">{currentUser.name}</span>
             <span className="text-xs text-slate-400 capitalize">{currentUser.role}</span>
@@ -1146,14 +1281,14 @@ export default function App() {
                       </div>
                     )}
                     <button
-                      onClick={() => !isRegistered && !isFull && !isClosed && setSelectedEventForReg(event)}
-                      disabled={isRegistered || isFull || isClosed}
+                      onClick={() => !isRegistered && !isClosed && setSelectedEventForReg(event)}
+                      disabled={isRegistered || isClosed}
                       className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 border shadow-lg shadow-black/20 ${isRegistered
                         ? 'bg-green-900/40 text-green-400 border-green-800 cursor-default'
                         : isClosed
                           ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
                           : isFull
-                            ? 'bg-red-950/40 text-red-400 border-red-900/40 cursor-not-allowed'
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
                             : 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
                         }`}
                     >
@@ -1167,7 +1302,7 @@ export default function App() {
                         </>
                       ) : isFull ? (
                         <>
-                          <X className="w-4 h-4" /> Registration Full
+                          <Plus className="w-4 h-4" /> Join Waitlist
                         </>
                       ) : 'Register Now'}
                     </button>
@@ -1289,7 +1424,7 @@ export default function App() {
                   {reg.status !== RegistrationStatus.APPROVED && (
                     <div className="flex gap-2 w-full md:w-auto">
                       <div className="flex-1 px-5 py-3 text-slate-500 text-sm font-medium text-center bg-slate-950 rounded-xl">
-                        {reg.status === RegistrationStatus.PENDING ? 'Waiting for approval' : 'Registration Rejected'}
+                        {reg.status === RegistrationStatus.PENDING ? 'Waiting for approval' : reg.status === RegistrationStatus.WAITLISTED ? 'On Waitlist' : 'Registration Rejected'}
                       </div>
                       <button
                         onClick={async () => {
@@ -1486,7 +1621,7 @@ export default function App() {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8">
         <button
-          onClick={() => setOrganizerSelectedEventId(null)}
+          onClick={() => { setOrganizerSelectedEventId(null); setSelectedRegistrationIds([]); }}
           className="mb-4 text-sm text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
         >
           ← Back to Events
@@ -1603,6 +1738,63 @@ export default function App() {
           </div>
         </div>
 
+        {/* Bulk Actions Bar */}
+        {selectedRegistrationIds.length > 0 && (
+          <div className="bg-indigo-600/10 border border-indigo-500/30 p-3 rounded-xl mb-6 flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-3">
+              <span className="text-indigo-400 font-bold text-sm px-2 py-1 bg-indigo-900/40 rounded-lg">{selectedRegistrationIds.length}</span>
+              <span className="text-indigo-200 text-sm font-medium">Selected</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (confirm(`Approve ${selectedRegistrationIds.length} registrations?`)) {
+                    await Promise.all(selectedRegistrationIds.map(id => updateRegistrationStatus(id, RegistrationStatus.APPROVED)));
+                    addToast(`Approved ${selectedRegistrationIds.length} participants`, 'success');
+                    setSelectedRegistrationIds([]);
+                    loadData();
+                  }
+                }}
+                className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+              >
+                <Check className="w-3.5 h-3.5" /> Approve
+              </button>
+              <button
+                onClick={async () => {
+                  if (confirm(`Reject ${selectedRegistrationIds.length} registrations?`)) {
+                    await Promise.all(selectedRegistrationIds.map(id => updateRegistrationStatus(id, RegistrationStatus.REJECTED)));
+                    addToast(`Rejected ${selectedRegistrationIds.length} participants`, 'info');
+                    setSelectedRegistrationIds([]);
+                    loadData();
+                  }
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" /> Reject
+              </button>
+              <button
+                onClick={async () => {
+                  if (confirm(`Mark ${selectedRegistrationIds.length} participants as present?`)) {
+                    await Promise.all(selectedRegistrationIds.map(id => markAttendance(id)));
+                    addToast(`Marked ${selectedRegistrationIds.length} participants as present`, 'success');
+                    setSelectedRegistrationIds([]);
+                    loadData();
+                  }
+                }}
+                className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+              >
+                <CheckCircle className="w-3.5 h-3.5" /> Mark Present
+              </button>
+              <button
+                onClick={() => setSelectedRegistrationIds([])}
+                className="text-slate-400 hover:text-white text-xs font-medium ml-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {dataLoading ? (
           <div className="space-y-4">
             {[1, 2, 3, 4, 5].map(i => <ListRowSkeleton key={i} />)}
@@ -1667,6 +1859,20 @@ export default function App() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-800 border-b border-slate-800">
                   <tr>
+                    <th className="px-6 py-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={eventRegs.length > 0 && selectedRegistrationIds.length === eventRegs.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRegistrationIds(eventRegs.map(r => r.id));
+                          } else {
+                            setSelectedRegistrationIds([]);
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+                      />
+                    </th>
                     <th className="px-6 py-4 font-semibold text-slate-300">Participant</th>
                     <th className="px-6 py-4 font-semibold text-slate-300">Email</th>
                     <th className="px-6 py-4 font-semibold text-slate-300">Status</th>
@@ -1677,7 +1883,21 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {eventRegs.map(reg => (
-                    <tr key={reg.id} className="hover:bg-slate-800/50">
+                    <tr key={reg.id} className={`hover:bg-slate-800/50 transition-colors ${selectedRegistrationIds.includes(reg.id) ? 'bg-indigo-900/10' : ''}`}>
+                      <td className="px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedRegistrationIds.includes(reg.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRegistrationIds(prev => [...prev, reg.id]);
+                            } else {
+                              setSelectedRegistrationIds(prev => prev.filter(id => id !== reg.id));
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+                        />
+                      </td>
                       <td className="px-6 py-4 font-medium text-slate-200">{reg.participantName}</td>
                       <td className="px-6 py-4 text-slate-400">{reg.participantEmail}</td>
                       <td className="px-6 py-4"><Badge status={reg.status} /></td>
@@ -2413,62 +2633,131 @@ export default function App() {
               </div>
             </div>
 
+            {/* Modal Tabs */}
+            <div className="flex bg-slate-800/50 p-1 mx-6 sm:mx-8 rounded-xl border border-slate-800/50 mt-4">
+              <button
+                onClick={() => setDetailsTab('info')}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'info' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Information
+              </button>
+              <button
+                onClick={() => setDetailsTab('discussion')}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'discussion' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Discussion
+              </button>
+            </div>
+
             <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 mb-8">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <div className="p-2 bg-indigo-500/10 rounded-lg">
-                      <Calendar className="w-5 h-5 text-indigo-400" />
+              {detailsTab === 'info' ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 mb-8">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 text-slate-300">
+                        <div className="p-2 bg-indigo-500/10 rounded-lg">
+                          <Calendar className="w-5 h-5 text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Date & Time</p>
+                          <p className="text-sm sm:text-base font-medium">{format(new Date(selectedEventForDetails.date), 'EEEE, MMMM d, yyyy')}</p>
+                          <p className="text-xs sm:text-sm text-slate-400">{format(new Date(selectedEventForDetails.date), 'p')}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-slate-300">
+                        <div className="p-2 bg-indigo-500/10 rounded-lg">
+                          <MapPin className="w-5 h-5 text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Location</p>
+                          <p className="text-sm sm:text-base font-medium italic">{selectedEventForDetails.location}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Date & Time</p>
-                      <p className="text-sm sm:text-base font-medium">{format(new Date(selectedEventForDetails.date), 'EEEE, MMMM d, yyyy')}</p>
-                      <p className="text-xs sm:text-sm text-slate-400">{format(new Date(selectedEventForDetails.date), 'p')}</p>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 text-slate-300">
+                        <div className="p-2 bg-indigo-500/10 rounded-lg">
+                          <Users className="w-5 h-5 text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Capacity</p>
+                          <p className="text-sm sm:text-base font-medium">{selectedEventForDetails.capacity} Available Spots</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-slate-300">
+                        <div className="p-2 bg-indigo-500/10 rounded-lg">
+                          <CheckCircle className="w-5 h-5 text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Registration</p>
+                          <p className="text-sm sm:text-base font-medium">{selectedEventForDetails.isRegistrationOpen ? 'Open' : 'Closed'}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <div className="p-2 bg-indigo-500/10 rounded-lg">
-                      <MapPin className="w-5 h-5 text-indigo-400" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Location</p>
-                      <p className="text-sm sm:text-base font-medium italic">{selectedEventForDetails.location}</p>
+                  <div className="border-t border-slate-800 pt-6">
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-3">About this experience</p>
+                    <div className="bg-slate-800/30 rounded-2xl p-4 sm:p-6 border border-slate-800">
+                      <p className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-line italic border-l-4 border-indigo-500/30 pl-4">
+                        {selectedEventForDetails.description}
+                      </p>
                     </div>
                   </div>
+                </>
+              ) : (
+                <div className="h-full flex flex-col min-h-[400px]">
+                  <div className="flex-1 space-y-4 mb-4 overflow-y-auto pr-2 custom-scrollbar">
+                    {isMessagesLoading ? (
+                      <div className="py-20 text-center">
+                        <Loader2 className="w-8 h-8 animate-spin text-slate-700 mx-auto" />
+                        <p className="text-slate-500 text-sm mt-3 font-medium">Loading conversations...</p>
+                      </div>
+                    ) : messages.length > 0 ? (
+                      messages.map(msg => (
+                        <div key={msg.id} className={`flex flex-col ${msg.userId === currentUser.id ? 'items-end' : 'items-start'}`}>
+                          <div className="flex items-baseline gap-2 mb-1 px-1">
+                            <span className="text-xs font-bold text-slate-300">{msg.userName}</span>
+                            <span className="text-[10px] text-slate-500">{format(new Date(msg.createdAt), 'h:mm a')}</span>
+                          </div>
+                          <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm shadow-sm ${msg.userId === currentUser.id
+                            ? 'bg-indigo-600 text-white rounded-tr-none'
+                            : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'
+                            }`}>
+                            {msg.content}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-20 text-center">
+                        <MessageSquare className="w-12 h-12 text-slate-800 mx-auto mb-4" />
+                        <p className="text-slate-400 text-sm font-medium">No messages yet.</p>
+                        <p className="text-slate-500 text-xs mt-1">Be the first to start the discussion!</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSendMessage} className="mt-auto pt-4 border-t border-slate-800 flex gap-2">
+                    <input
+                      type="text"
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-inner"
+                      placeholder="Ask a question or say hi..."
+                      value={newMessageText}
+                      onChange={e => setNewMessageText(e.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newMessageText.trim()}
+                      className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:grayscale transition-all shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center justify-center group"
+                    >
+                      <Send className="w-5 h-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                    </button>
+                  </form>
                 </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <div className="p-2 bg-indigo-500/10 rounded-lg">
-                      <Users className="w-5 h-5 text-indigo-400" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Capacity</p>
-                      <p className="text-sm sm:text-base font-medium">{selectedEventForDetails.capacity} Available Spots</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <div className="p-2 bg-indigo-500/10 rounded-lg">
-                      <CheckCircle className="w-5 h-5 text-indigo-400" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Registration</p>
-                      <p className="text-sm sm:text-base font-medium">{selectedEventForDetails.isRegistrationOpen ? 'Open' : 'Closed'}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-800 pt-6">
-                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-3">About this experience</p>
-                <div className="bg-slate-800/30 rounded-2xl p-4 sm:p-6 border border-slate-800">
-                  <p className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-line italic border-l-4 border-indigo-500/30 pl-4">
-                    {selectedEventForDetails.description}
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="p-6 sm:p-8 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row gap-4 flex-shrink-0">
