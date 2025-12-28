@@ -578,6 +578,54 @@ export default function App() {
     addToast(`Sent reminders to ${count} attendees.`, 'success');
   };
 
+  const handleExportCSV = (event: Event) => {
+    const eventRegs = registrations.filter(r => r.eventId === event.id);
+    if (eventRegs.length === 0) {
+      addToast('No participants to export.', 'info');
+      return;
+    }
+
+    // Header
+    const headers = ['Participant Name', 'Email', 'Status', 'Attendance', 'Attendance Time', 'Registered At'];
+
+    // Add custom questions to headers
+    const customQuestions = event.customQuestions || [];
+    customQuestions.forEach(q => headers.push(q.question));
+
+    const csvRows = [headers.join(',')];
+
+    eventRegs.forEach(reg => {
+      const row = [
+        `"${reg.participantName.replace(/"/g, '""')}"`,
+        `"${reg.participantEmail.replace(/"/g, '""')}"`,
+        `"${reg.status}"`,
+        `"${reg.attended ? 'Present' : 'Absent'}"`,
+        `"${reg.attendanceTime ? format(new Date(reg.attendanceTime), 'yyyy-MM-dd HH:mm:ss') : '-'}"`,
+        `"${format(new Date(reg.registeredAt), 'yyyy-MM-dd HH:mm:ss')}"`
+      ];
+
+      // Add answers for custom questions
+      customQuestions.forEach(q => {
+        const answer = reg.answers ? reg.answers[q.id] || '' : '';
+        row.push(`"${String(answer).replace(/"/g, '""')}"`);
+      });
+
+      csvRows.push(row.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${event.title.replace(/\s+/g, '_')}_participants.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addToast('CSV exported successfully', 'success');
+  };
+
   const handleManualAttendance = async (regId: string) => {
     if (!confirm('Mark this participant as present?')) return;
 
@@ -1500,6 +1548,12 @@ export default function App() {
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-900/40 text-red-400 border border-red-800 px-4 py-2 rounded-lg hover:bg-red-900/60 font-medium transition-colors"
             >
               <Trash2 className="w-4 h-4" /> Delete Event
+            </button>
+            <button
+              onClick={() => event && handleExportCSV(event)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-indigo-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+            >
+              <Download className="w-4 h-4" /> Export CSV
             </button>
             <button
               onClick={() => setIsScannerOpen(true)}
