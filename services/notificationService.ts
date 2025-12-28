@@ -28,8 +28,8 @@ export const sendStatusUpdateEmail = async (
   status: RegistrationStatus
 ): Promise<boolean> => {
   const isApproved = status === RegistrationStatus.APPROVED;
-  const subject = isApproved 
-    ? `Confirmation: You're going to ${eventTitle}!` 
+  const subject = isApproved
+    ? `Confirmation: You're going to ${eventTitle}!`
     : `Update regarding your registration for ${eventTitle}`;
 
   const body = isApproved
@@ -65,9 +65,9 @@ export const sendReminderEmail = async (
   location: string
 ): Promise<boolean> => {
   const formattedDate = new Date(eventDate).toLocaleString();
-  
+
   const subject = `Reminder: Upcoming Event - ${eventTitle}`;
-  
+
   const body = `Dear ${participantName},
 
 This is a friendly reminder that you are registered for "${eventTitle}".

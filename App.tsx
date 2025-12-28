@@ -2,25 +2,29 @@ import React, { useState, useEffect, useCallback } from 'react';
 import QRCode from 'react-qr-code';
 import {
   Calendar, MapPin, Plus, QrCode, CheckCircle, XCircle, Sparkles, ScanLine,
-  Search, Users, Clock, X, Check, ChevronRight, ChevronLeft, Trash2, Edit,
+  Search, Users, Clock, X, Check, ChevronRight, ChevronLeft, Trash2, Edit, Link,
   Save, Upload, Image as ImageIcon, Loader2, Menu, LogOut, Download, Bell,
-  Send, MessageSquare, UserCircle, KeyRound, Mail, Filter, ExternalLink
+  Send, MessageSquare, UserCircle, KeyRound, Mail, Filter, ExternalLink,
+  Share2, Facebook, Twitter, Linkedin, Copy, Star, CalendarPlus // Removed Smartphone
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
 
-import { Event, Registration, RegistrationStatus, Tab, Toast, User, Role, CustomQuestion } from './types';
+import { Event, Registration, RegistrationStatus, Tab, Toast, User, Role, CustomQuestion, Review, ParticipationMode, Team } from './types';
 import {
   getEvents, saveEvent, updateEvent, getRegistrations, addRegistration,
   updateRegistrationStatus, markAttendance, deleteRegistration, deleteEvent,
   loginUser, registerUser, subscribeToAuth, logoutUser,
   loginWithGoogle, saveUserProfile, resetUserPassword,
+  createTeam, getTeamByInviteCode, joinTeam, getTeamsByEventId, getTeamById,
   getNotifications, addNotification, markNotificationRead,
-  getMessages, addMessage
+  getMessages, addMessage, getReviews, addReview, deleteAccount, getEventById, getEventImage
 } from './services/storageService';
-import { generateEventDescription } from './services/geminiService';
+import { generateEventDescription, getEventRecommendations } from './services/geminiService';
 import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificationService';
 import Scanner from './components/Scanner';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
+import { socketService } from './services/socketService';
 
 // --- Sub-Components ---
 
@@ -105,6 +109,43 @@ const ListRowSkeleton = () => (
 
 // --- Helpers ---
 
+const LazyEventImage = ({ eventId, initialSrc, alt, className }: { eventId: string, initialSrc?: string, alt: string, className?: string }) => {
+  const [src, setSrc] = useState(initialSrc);
+  const [loading, setLoading] = useState(!initialSrc);
+
+  useEffect(() => {
+    // If we already have a src (e.g. valid URL or cached), don't fetch
+    if (initialSrc && initialSrc.length > 50) { // arbitrary length check for base64/url
+      setSrc(initialSrc);
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    if (eventId) {
+      getEventImage(eventId).then(url => {
+        if (mounted) {
+          if (url) setSrc(url);
+          setLoading(false);
+        }
+      }).catch(() => {
+        if (mounted) setLoading(false);
+      });
+    }
+    return () => { mounted = false; };
+  }, [eventId, initialSrc]);
+
+  if (loading || !src) {
+    return (
+      <div className={`bg-slate-800 flex items-center justify-center ${className}`}>
+        {loading ? <Loader2 className="w-6 h-6 text-slate-600 animate-spin" /> : <ImageIcon className="w-8 h-8 text-slate-700" />}
+      </div>
+    );
+  }
+
+  return <img src={src} alt={alt} className={className} />;
+};
+
 const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<string> => {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -154,6 +195,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -194,6 +236,7 @@ export default function App() {
 
   // Organizer View State
   const [organizerSelectedEventId, setOrganizerSelectedEventId] = useState<string | null>(null);
+  const [organizerView, setOrganizerView] = useState<'overview' | 'events'>('overview');
   const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | RegistrationStatus>('ALL');
   const [attendanceFilter, setAttendanceFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL');
@@ -201,14 +244,25 @@ export default function App() {
 
   // Form States
   const [newEvent, setNewEvent] = useState<{
-    title: string; date: string; endDate: string; location: string; locationType: 'online' | 'offline'; description: string; capacity: string; imageUrl: string; customQuestions: CustomQuestion[]
-  }>({ title: '', date: '', endDate: '', location: '', locationType: 'offline', description: '', capacity: '', imageUrl: '', customQuestions: [] });
+    title: string; date: string; endDate: string; location: string; locationType: 'online' | 'offline'; description: string; capacity: string; imageUrl: string; customQuestions: CustomQuestion[]; collaboratorEmails: string[];
+    participationMode: ParticipationMode; maxTeamSize: string;
+  }>({
+    title: '', date: '', endDate: '', location: '', locationType: 'offline', description: '', capacity: '', imageUrl: '', customQuestions: [], collaboratorEmails: [],
+    participationMode: 'individual', maxTeamSize: '5'
+  });
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [registrationAnswers, setRegistrationAnswers] = useState<Record<string, string>>({});
   const [selectedRegistrationDetails, setSelectedRegistrationDetails] = useState<Registration | null>(null);
+  const [teamRegistrationData, setTeamRegistrationData] = useState<{
+    mode: 'individual' | 'team';
+    subMode: 'create' | 'join';
+    teamName: string;
+    inviteCode: string;
+  }>({ mode: 'individual', subMode: 'create', teamName: '', inviteCode: '' });
 
   // Cropper State
   const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [collaboratorEmailInput, setCollaboratorEmailInput] = useState('');
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [tempImageSrc, setTempImageSrc] = useState<string | null>(null);
@@ -234,6 +288,50 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Socket.io Listener
+  useEffect(() => {
+    socketService.connect();
+
+    const handleDataUpdate = (data: any) => {
+      console.log('⚡ Real-time update:', data);
+
+      if (data.collection === 'events') {
+        loadData(true);
+        if (data.action === 'insert') {
+          addToast(`New event: ${data.document.title}`, 'info');
+        }
+      } else if (data.collection === 'registrations') {
+        // Special logic for "X spots left"
+        if (data.action === 'insert' && data.eventId) {
+          const event = events.find(e => e.id === data.eventId);
+          if (event && event.capacity) {
+            const currentRegs = registrations.filter(r => r.eventId === data.eventId && r.status !== RegistrationStatus.REJECTED).length + 1;
+            const remaining = Number(event.capacity) - currentRegs;
+            if (remaining > 0 && remaining <= 5) {
+              addToast(`🔥 Hurry! Only ${remaining} spots left for "${event.title}"`, 'info');
+            }
+          }
+        }
+        loadData(true);
+      }
+    };
+
+    const handleNotification = (data: any) => {
+      if (currentUser && data.userId === currentUser.id) {
+        addToast(data.message, data.type || 'info');
+        loadData(true);
+      }
+    };
+
+    socketService.on('data_updated', handleDataUpdate);
+    socketService.on('notification_received', handleNotification);
+
+    return () => {
+      socketService.off('data_updated', handleDataUpdate);
+      socketService.off('notification_received', handleNotification);
+    };
+  }, [currentUser, events, registrations]); // Added events and registrations as dependencies
 
   // Profile Edit State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -264,14 +362,25 @@ export default function App() {
     if (!isSilent) setDataLoading(true);
     try {
       if (currentUser) {
-        const [loadedEvents, loadedRegs, loadedNotifs] = await Promise.all([
+        const [evts, regs, notifs] = await Promise.all([
           getEvents(),
           getRegistrations(),
           getNotifications(currentUser.id)
         ]);
-        setEvents(loadedEvents);
-        setRegistrations(loadedRegs);
-        setNotifications(loadedNotifs);
+
+        setEvents(evts);
+        setRegistrations(regs);
+        setNotifications(notifs);
+
+        // Fetch teams for events user is registered for AND events they organize (if organizer)
+        const userEventIds = regs.filter(r => r.participantEmail === currentUser.email).map(r => r.eventId);
+        const organizedEventIds = currentUser.role === 'organizer' ? evts.filter(e => e.organizerId === currentUser.id).map(e => e.id) : [];
+        const allEventIdsToFetchTeams = Array.from(new Set([...userEventIds, ...organizedEventIds]));
+
+        if (allEventIdsToFetchTeams.length > 0) {
+          const allTeams = await Promise.all(allEventIdsToFetchTeams.map(id => getTeamsByEventId(id)));
+          setTeams(allTeams.flat());
+        }
       } else {
         const loadedEvents = await getEvents();
         setEvents(loadedEvents);
@@ -285,7 +394,7 @@ export default function App() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => loadData(true), 1000);
+    const interval = setInterval(() => loadData(true), 120000);
     return () => clearInterval(interval);
   }, [currentUser]);
 
@@ -302,9 +411,191 @@ export default function App() {
     };
 
     fetchMessages();
-    const interval = setInterval(() => fetchMessages(true), 1000);
+    const interval = setInterval(() => fetchMessages(true), 5000);
     return () => clearInterval(interval);
   }, [selectedEventForDetails]);
+
+  // Hydrate Event Details (Fetch full data if missing logic from list view optimization)
+  useEffect(() => {
+    const hydrateEvent = async () => {
+      if (selectedEventForDetails) {
+        // If description is empty or image is empty (and we expect them usually), fetch full
+        // Note: Some events might legitimately have no image, but our list view forces it to empty string.
+        // We can check a flag or just always fetch if we are in Mongo mode.
+        // For simplicity, let's always fetch fresh details to ensure up-to-date data too.
+        try {
+          const fullEvent = await getEventById(selectedEventForDetails.id);
+          if (fullEvent) {
+            // Only update if it's different to avoid loops? 
+            // React state update only re-renders if reference changes. 
+            // We need to avoid infinite loop. Check if description length changed significantly?
+            if (fullEvent.description.length > selectedEventForDetails.description.length || (fullEvent.imageUrl && !selectedEventForDetails.imageUrl)) {
+              setSelectedEventForDetails(fullEvent);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to hydrate event", e);
+        }
+      }
+    };
+    hydrateEvent();
+  }, [selectedEventForDetails?.id]); // Only run if ID changes
+
+  // Event Reminders Polling
+  useEffect(() => {
+    const checkReminders = async () => {
+      if (!currentUser || registrations.length === 0 || events.length === 0) return;
+
+      const now = new Date();
+      const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+
+      const myApprovedRegs = registrations.filter(r =>
+        r.participantId === currentUser.id &&
+        r.status === RegistrationStatus.APPROVED
+      );
+
+      for (const reg of myApprovedRegs) {
+        const event = events.find(e => e.id === reg.eventId);
+        if (!event) continue;
+
+        const eventDate = new Date(event.date);
+
+        // Reminder Logic: Starts within 1 hour, hasn't started yet
+        if (eventDate > now && eventDate <= oneHourLater) {
+          const reminderKey = `reminder_1h_${event.id}_${currentUser.id}`;
+          const alreadySent = localStorage.getItem(reminderKey);
+
+          if (!alreadySent) {
+            await addNotification({
+              userId: currentUser.id,
+              title: 'Upcoming Event',
+              message: `"${event.title}" is starting in less than an hour!`,
+              type: 'info',
+              link: 'my-tickets'
+            });
+
+            localStorage.setItem(reminderKey, 'true');
+            // Refresh notifs visually
+            loadData(true);
+            addToast(`Reminder: "${event.title}" starts soon!`, 'info');
+          }
+        }
+      }
+    };
+
+    const timer = setInterval(checkReminders, 60000); // Check every minute
+    checkReminders(); // Initial check
+
+    return () => clearInterval(timer);
+  }, [currentUser, registrations, events]);
+
+  // Recommendations Logic
+  const [recommendedEvents, setRecommendedEvents] = useState<Event[]>([]);
+  const [areRecommendationsLoading, setAreRecommendationsLoading] = useState(false);
+  const [isAiUnavailable, setIsAiUnavailable] = useState(false);
+
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      if (!currentUser || currentUser.role !== 'attendee' || events.length === 0 || registrations.length === 0 || isAiUnavailable) return;
+
+      // Avoid refetching if we already have them to save tokens, unless forced (not implemented here)
+      if (recommendedEvents.length > 0) return;
+
+      setAreRecommendationsLoading(true);
+      try {
+        const myRegs = registrations.filter(r => r.participantEmail === currentUser.email);
+        if (myRegs.length === 0) {
+          setAreRecommendationsLoading(false);
+          return;
+        }
+
+        // Prepare Past Events Data
+        const pastEvents = myRegs.map(r => {
+          const e = events.find(ev => ev.id === r.eventId);
+          return e ? { title: e.title, description: e.description, type: e.locationType || 'offline' } : null;
+        }).filter(Boolean) as { title: string; description: string; type: string }[];
+
+        // Prepare Upcoming Events Data
+        const upcoming = events.filter(e =>
+          !myRegs.some(r => r.eventId === e.id) &&
+          new Date(e.date) > new Date()
+        ).map(e => ({
+          id: e.id,
+          title: e.title,
+          description: e.description,
+          date: e.date,
+          type: e.locationType || 'offline'
+        }));
+
+        if (upcoming.length < 1) {
+          setAreRecommendationsLoading(false);
+          return;
+        }
+
+        const recIds = await getEventRecommendations(pastEvents, upcoming);
+        const recs = events.filter(e => recIds.includes(e.id));
+        setRecommendedEvents(recs);
+      } catch (e: any) {
+        console.error("Gemini Recommendation Error:", e);
+        // Disable AI if API key is invalid or quota exceeded
+        if (JSON.stringify(e).includes('400') || JSON.stringify(e).includes('API key')) {
+          setIsAiUnavailable(true);
+          // Optional: silently fail or toast once
+        }
+      } finally {
+        setAreRecommendationsLoading(false);
+      }
+    };
+
+    fetchRecommendations();
+  }, [currentUser, events, registrations, isAiUnavailable, recommendedEvents.length]);
+
+
+
+  // Review State & Logic
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [rating, setRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isReviewsLoading, setIsReviewsLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      if (selectedEventForDetails && detailsTab === 'reviews') {
+        setIsReviewsLoading(true);
+        const data = await getReviews(selectedEventForDetails.id);
+        setReviews(data);
+        setIsReviewsLoading(false);
+      }
+    };
+    fetchReviews();
+  }, [selectedEventForDetails, detailsTab]);
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEventForDetails || !currentUser) return;
+
+    if (reviewComment.trim().length < 5) {
+      addToast('Review must be at least 5 characters', 'error');
+      return;
+    }
+
+    const reviewData = {
+      eventId: selectedEventForDetails.id,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      rating: rating,
+      comment: reviewComment.trim()
+    };
+
+    await addReview(reviewData);
+    setReviewComment('');
+    setRating(5);
+    addToast('Review submitted successfully!', 'success');
+
+    // Refresh reviews
+    const data = await getReviews(selectedEventForDetails.id);
+    setReviews(data);
+  };
 
   const addToast = (message: string, type: Toast['type'] = 'info') => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -397,31 +688,45 @@ export default function App() {
   };
 
   const resetEventForm = () => {
-    setNewEvent({ title: '', date: '', endDate: '', location: '', locationType: 'offline', description: '', capacity: '', imageUrl: '', customQuestions: [] });
+    setNewEvent({
+      title: '', date: '', endDate: '', location: '', locationType: 'offline', description: '', capacity: '', imageUrl: '', customQuestions: [], collaboratorEmails: [],
+      participationMode: 'individual', maxTeamSize: '5'
+    });
     setIsEditMode(false);
     setEditingEventId(null);
   };
 
-  const handleEditClick = (event: Event) => {
+  const handleEditClick = async (event: Event) => {
+    // Fetch full event details to ensure description/imageUrl are present
+    addToast('Loading event details...', 'info');
+    const fullEvent = await getEventById(event.id);
+    if (!fullEvent) {
+      addToast('Failed to load full event data', 'error');
+      return;
+    }
+
     // Format date for datetime-local input (YYYY-MM-DDThh:mm)
-    const d = new Date(event.date);
-    const ed = event.endDate ? new Date(event.endDate) : new Date(new Date(event.date).getTime() + 3600000); // Default +1hr if missing
+    const d = new Date(fullEvent.date);
+    const ed = fullEvent.endDate ? new Date(fullEvent.endDate) : new Date(new Date(fullEvent.date).getTime() + 3600000); // Default +1hr if missing
     const pad = (n: number) => n < 10 ? '0' + n : n;
     const dateStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     const endDateStr = ed.getFullYear() + '-' + pad(ed.getMonth() + 1) + '-' + pad(ed.getDate()) + 'T' + pad(ed.getHours()) + ':' + pad(ed.getMinutes());
 
     setNewEvent({
-      title: event.title,
+      title: fullEvent.title,
       date: dateStr,
       endDate: endDateStr,
-      location: event.location,
-      locationType: event.locationType || 'offline',
-      description: event.description,
-      capacity: event.capacity.toString(),
-      imageUrl: event.imageUrl || '',
-      customQuestions: event.customQuestions || []
+      location: fullEvent.location,
+      locationType: fullEvent.locationType || 'offline',
+      description: fullEvent.description,
+      capacity: fullEvent.capacity.toString(),
+      imageUrl: fullEvent.imageUrl || '',
+      customQuestions: fullEvent.customQuestions || [],
+      collaboratorEmails: fullEvent.collaboratorEmails || [],
+      participationMode: fullEvent.participationMode || 'individual',
+      maxTeamSize: (fullEvent.maxTeamSize || 5).toString()
     });
-    setEditingEventId(event.id);
+    setEditingEventId(fullEvent.id);
     setIsEditMode(true);
     setIsCreateModalOpen(true);
   };
@@ -441,8 +746,11 @@ export default function App() {
         capacity: parseInt(newEvent.capacity) || 0,
         imageUrl: newEvent.imageUrl || `https://picsum.photos/800/400?random=${Math.floor(Math.random() * 100)}`,
         customQuestions: newEvent.customQuestions || [],
+        collaboratorEmails: newEvent.collaboratorEmails || [],
         organizerId: currentUser.id,
-        isRegistrationOpen: true
+        isRegistrationOpen: true,
+        participationMode: newEvent.participationMode,
+        maxTeamSize: parseInt(newEvent.maxTeamSize) || 0
       };
 
       if (new Date(evtDataCommon.endDate) <= new Date(evtDataCommon.date)) {
@@ -531,6 +839,14 @@ export default function App() {
         return;
       }
 
+      const now = new Date();
+      if (now >= new Date(latestEvent.date)) {
+        addToast('This event has already started or ended', 'error');
+        setSelectedEventForReg(null);
+        setIsRegistering(false);
+        return;
+      }
+
       // Use current user's email
       const email = currentUser.email;
 
@@ -558,27 +874,92 @@ export default function App() {
         }
       }
 
-      const regData = {
+      const currentRegCount = registrations.filter(r =>
+        r.eventId === selectedEventForReg.id &&
+        (r.status === RegistrationStatus.APPROVED || r.status === RegistrationStatus.PENDING)
+      ).length;
+
+      const isCapacityFull = currentRegCount >= (selectedEventForReg.capacity as number);
+      const initialStatus = isCapacityFull ? RegistrationStatus.WAITLISTED : RegistrationStatus.PENDING;
+
+      let finalRegData: any = {
         eventId: selectedEventForReg.id,
         participantId: currentUser.id,
         participantName: currentUser.name,
         participantEmail: email,
-        status: RegistrationStatus.PENDING,
+        status: initialStatus,
         attended: false,
         registeredAt: new Date().toISOString(),
         answers: registrationAnswers
       };
 
-      const created = await addRegistration(regData);
+      if (teamRegistrationData.mode === 'team') {
+        if (teamRegistrationData.subMode === 'create') {
+          if (!teamRegistrationData.teamName.trim()) {
+            addToast('Please enter a team name', 'error');
+            setIsRegistering(false);
+            return;
+          }
+          const team = await createTeam({
+            name: teamRegistrationData.teamName,
+            eventId: selectedEventForReg.id,
+            leaderId: currentUser.id,
+            members: [{ userId: currentUser.id, userName: currentUser.name, email: currentUser.email }],
+            createdAt: new Date().toISOString(),
+            inviteCode: '' // filled by service
+          });
+          if (team) {
+            finalRegData.teamId = team.id;
+            finalRegData.teamName = team.name;
+            finalRegData.isTeamLeader = true;
+            finalRegData.participationType = 'team';
+            addToast(`Team "${team.name}" created! Invite Code: ${team.inviteCode}`, 'success');
+          } else {
+            throw new Error("Failed to create team");
+          }
+        } else {
+          if (!teamRegistrationData.inviteCode.trim()) {
+            addToast('Please enter an invite code', 'error');
+            setIsRegistering(false);
+            return;
+          }
+          const team = await getTeamByInviteCode(teamRegistrationData.inviteCode);
+          if (!team) {
+            addToast("Invalid invite code", "error");
+            setIsRegistering(false);
+            return;
+          }
+          if (team.eventId !== selectedEventForReg.id) {
+            addToast("This invite code is for a different event", "error");
+            setIsRegistering(false);
+            return;
+          }
+          if (team.members.length >= (selectedEventForReg.maxTeamSize || 99)) {
+            addToast("Team is already full", "error");
+            setIsRegistering(false);
+            return;
+          }
+          await joinTeam(team.id, { userId: currentUser.id, userName: currentUser.name, email: currentUser.email });
+          finalRegData.teamId = team.id;
+          finalRegData.teamName = team.name;
+          finalRegData.isTeamLeader = false;
+          finalRegData.participationType = 'team';
+        }
+      } else {
+        finalRegData.participationType = 'individual';
+      }
+
+      const created = await addRegistration(finalRegData);
 
       if (created) {
         await loadData();
         setSelectedEventForReg(null);
         setRegistrationAnswers({});
+        setTeamRegistrationData({ mode: 'individual', subMode: 'create', teamName: '', inviteCode: '' });
         if (created.status === RegistrationStatus.WAITLISTED) {
-          addToast('Space is full, you have been added to the waitlist.', 'info');
+          addToast('Event is full. You have been added to the waitlist.', 'info');
         } else {
-          addToast('Registration submitted! Waiting for approval.', 'success');
+          addToast(teamRegistrationData.mode === 'team' ? 'Team registration submitted!' : 'Registration submitted! Waiting for approval.', 'success');
         }
       } else {
         addToast('Registration failed or event is closed', 'error');
@@ -718,6 +1099,24 @@ export default function App() {
     setNewMessageText('');
     const msgs = await getMessages(selectedEventForDetails.id);
     setMessages(msgs);
+
+    // Send notifications to OTHER participants
+    const otherParticipants = registrations.filter(r =>
+      r.eventId === selectedEventForDetails.id &&
+      r.participantId !== currentUser.id &&
+      r.status === RegistrationStatus.APPROVED
+    );
+
+    // Avoid blocking UI for notifications
+    Promise.all(otherParticipants.map(participant =>
+      addNotification({
+        userId: participant.participantId,
+        title: `New message in "${selectedEventForDetails.title}"`,
+        message: `${currentUser.name} says: ${newMessageText.trim().substring(0, 50)}${newMessageText.trim().length > 50 ? '...' : ''}`,
+        type: 'info',
+        link: 'browse' // Or specific link to discussion if supported
+      })
+    ));
   };
 
   const handleManualAttendance = async (regId: string) => {
@@ -1258,7 +1657,7 @@ export default function App() {
       return (
         <div key={event.id} className={`group bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 flex flex-col h-full ${isPast ? 'opacity-60 grayscale' : ''}`}>
           <div className="relative h-48 overflow-hidden">
-            <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+            <LazyEventImage eventId={event.id} initialSrc={event.imageUrl} alt={event.title} className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
             <div className={`absolute top-4 right-4 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold shadow-sm ${event.locationType === 'online' ? 'bg-indigo-900/90 text-indigo-200 border border-indigo-500/30' : 'bg-slate-800/90 text-slate-200'}`}>
               {event.locationType === 'online' ? 'Online' : 'Offline'}
             </div>
@@ -1308,10 +1707,17 @@ export default function App() {
                       </div>
                     )}
                     <button
-                      onClick={() => !isRegistered && !isClosed && setSelectedEventForReg(event)}
-                      disabled={isRegistered || isClosed}
+                      onClick={() => {
+                        if (isRegistered) {
+                          const myReg = registrations.find(r => r.eventId === event.id && r.participantEmail === currentUser.email);
+                          if (myReg) setSelectedRegistrationDetails(myReg);
+                        } else if (!isClosed) {
+                          setSelectedEventForReg(event);
+                        }
+                      }}
+                      disabled={!isRegistered && isClosed}
                       className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 border shadow-lg shadow-black/20 ${isRegistered
-                        ? 'bg-green-900/40 text-green-400 border-green-800 cursor-default'
+                        ? 'bg-indigo-900/40 text-indigo-400 border-indigo-500 hover:bg-indigo-900/60 active:scale-95'
                         : isClosed
                           ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
                           : isFull
@@ -1321,7 +1727,7 @@ export default function App() {
                     >
                       {isRegistered ? (
                         <>
-                          <CheckCircle className="w-4 h-4" /> Already Registered
+                          <CheckCircle className="w-4 h-4" /> View Registration
                         </>
                       ) : isClosed ? (
                         <>
@@ -1329,7 +1735,7 @@ export default function App() {
                         </>
                       ) : isFull ? (
                         <>
-                          <Plus className="w-4 h-4" /> Join Waitlist
+                          <Clock className="w-4 h-4" /> Join Waitlist
                         </>
                       ) : 'Register Now'}
                     </button>
@@ -1367,6 +1773,24 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-16">
+            {/* Recommendations Section */}
+            {currentUser.role === 'attendee' && (recommendedEvents.length > 0 || areRecommendationsLoading) && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-6">
+                  <Sparkles className="w-5 h-5 text-indigo-400" />
+                  <h3 className="text-xl font-bold text-white font-outfit">Recommended for You</h3>
+                </div>
+                {areRecommendationsLoading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {[1, 2, 3].map(i => <EventCardSkeleton key={`rec-kel-${i}`} />)}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 rounded-2xl bg-indigo-900/10 border border-indigo-500/20">
+                    {recommendedEvents.map(renderEventCard)}
+                  </div>
+                )}
+              </div>
+            )}
             {upcomingEvents.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {upcomingEvents.map(renderEventCard)}
@@ -1446,6 +1870,8 @@ export default function App() {
                       </span>
                     </div>
                     <div className="hidden md:block mt-2 text-xs text-slate-500">ID: {reg.id.slice(0, 8)}...</div>
+
+
                   </div>
 
                   {reg.status !== RegistrationStatus.APPROVED && (
@@ -1506,11 +1932,15 @@ export default function App() {
     );
   };
 
-  const renderOrganizer = () => {
-    // Only show events created by this organizer
-    const myEvents = events.filter(e => e.organizerId === currentUser.id);
 
-    // If no event selected, show list
+
+
+
+  const renderOrganizer = () => {
+    // Only show events created by this organizer OR where they are a collaborator
+    const myEvents = events.filter(e => e.organizerId === currentUser.id || (e.collaboratorEmails && e.collaboratorEmails.includes(currentUser.email)));
+
+    // If no event selected, show Dashboard or List
     if (!organizerSelectedEventId) {
       return (
         <div className="max-w-7xl mx-auto px-4 py-8">
@@ -1535,99 +1965,122 @@ export default function App() {
             </div>
           </div>
 
-          {dataLoading ? (
-            <div className="space-y-4">
-              {[1, 2, 3, 4].map(i => <ListRowSkeleton key={i} />)}
-            </div>
+          {/* Organizer Tabs */}
+          <div className="flex bg-slate-800/50 p-1 rounded-xl mb-6 w-fit">
+            <button
+              onClick={() => setOrganizerView('overview')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${organizerView === 'overview' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setOrganizerView('events')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${organizerView === 'events' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              My Events
+            </button>
+          </div>
+
+          {organizerView === 'overview' ? (
+            <AnalyticsDashboard
+              events={myEvents}
+              registrations={registrations.filter(r => myEvents.some(e => e.id === r.eventId))}
+            />
           ) : (
-            <>
-              {/* Mobile View: Cards */}
-              <div className="block md:hidden space-y-4">
-                {myEvents.map(event => {
-                  const eventRegs = registrations.filter(r => r.eventId === event.id);
-                  const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
-                  return (
-                    <div key={event.id} className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm active:scale-[0.98] transition-all" onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}>
-                      <div className="flex justify-between items-start mb-3">
-                        <h3 className="font-semibold text-white line-clamp-1">{event.title}</h3>
-                        <ChevronRight className="w-5 h-5 text-slate-400" />
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
-                        <Calendar className="w-4 h-4" />
-                        {format(new Date(event.date), 'MMM d, yyyy')}
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded-md border border-slate-700">
-                          {eventRegs.length} / {event.capacity} registered
-                        </span>
-                        {pendingCount > 0 && (
-                          <span className="bg-amber-900/40 text-amber-400 text-xs px-2 py-1 rounded-full font-medium border border-amber-800">
-                            {pendingCount} pending
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                {myEvents.length === 0 && (
-                  <div className="text-center text-slate-400 py-8 bg-slate-900 rounded-xl border border-dashed border-slate-700">
-                    No events created yet.
-                  </div>
-                )}
+            dataLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3, 4].map(i => <ListRowSkeleton key={i} />)}
               </div>
+            ) : (
+              <>
+                {/* Mobile View: Cards */}
+                <div className="block md:hidden space-y-4">
+                  {myEvents.map(event => {
+                    const eventRegs = registrations.filter(r => r.eventId === event.id);
+                    const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
+                    return (
+                      <div key={event.id} className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm active:scale-[0.98] transition-all" onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}>
+                        <div className="flex justify-between items-start mb-3">
+                          <h3 className="font-semibold text-white line-clamp-1">{event.title}</h3>
+                          <ChevronRight className="w-5 h-5 text-slate-400" />
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+                          <Calendar className="w-4 h-4" />
+                          {format(new Date(event.date), 'MMM d, yyyy')}
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded-md border border-slate-700">
+                            {eventRegs.length} / {event.capacity} registered
+                          </span>
+                          {pendingCount > 0 && (
+                            <span className="bg-amber-900/40 text-amber-400 text-xs px-2 py-1 rounded-full font-medium border border-amber-800">
+                              {pendingCount} pending
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {myEvents.length === 0 && (
+                    <div className="text-center text-slate-400 py-8 bg-slate-900 rounded-xl border border-dashed border-slate-700">
+                      No events created yet.
+                    </div>
+                  )}
+                </div>
 
-              {/* Desktop View: Table */}
-              <div className="hidden md:block bg-slate-900 rounded-xl shadow-sm border border-slate-800 overflow-hidden">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-800 border-b border-slate-800">
-                    <tr>
-                      <th className="px-6 py-4 font-semibold text-slate-300">Event Name</th>
-                      <th className="px-6 py-4 font-semibold text-slate-300">Date</th>
-                      <th className="px-6 py-4 font-semibold text-slate-300">Registrations</th>
-                      <th className="px-6 py-4 font-semibold text-slate-300">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {myEvents.map(event => {
-                      const eventRegs = registrations.filter(r => r.eventId === event.id);
-                      const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
+                {/* Desktop View: Table */}
+                <div className="hidden md:block bg-slate-900 rounded-xl shadow-sm border border-slate-800 overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-800 border-b border-slate-800">
+                      <tr>
+                        <th className="px-6 py-4 font-semibold text-slate-300">Event Name</th>
+                        <th className="px-6 py-4 font-semibold text-slate-300">Date</th>
+                        <th className="px-6 py-4 font-semibold text-slate-300">Registrations</th>
+                        <th className="px-6 py-4 font-semibold text-slate-300">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {myEvents.map(event => {
+                        const eventRegs = registrations.filter(r => r.eventId === event.id);
+                        const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
 
-                      return (
-                        <tr key={event.id} className="hover:bg-slate-800/50">
-                          <td className="px-6 py-4 font-medium text-slate-200">{event.title}</td>
-                          <td className="px-6 py-4 text-slate-400">{format(new Date(event.date), 'MMM d, yyyy')}</td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-300">{eventRegs.length} / {event.capacity}</span>
-                              {pendingCount > 0 && (
-                                <span className="bg-amber-900/50 text-amber-200 text-xs px-2 py-0.5 rounded-full border border-amber-800">
-                                  {pendingCount} pending
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <button
-                              onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}
-                              className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-                            >
-                              Manage
-                            </button>
+                        return (
+                          <tr key={event.id} className="hover:bg-slate-800/50">
+                            <td className="px-6 py-4 font-medium text-slate-200">{event.title}</td>
+                            <td className="px-6 py-4 text-slate-400">{format(new Date(event.date), 'MMM d, yyyy')}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-300">{eventRegs.length} / {event.capacity}</span>
+                                {pendingCount > 0 && (
+                                  <span className="bg-amber-900/50 text-amber-200 text-xs px-2 py-0.5 rounded-full border border-amber-800">
+                                    {pendingCount} pending
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <button
+                                onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}
+                                className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                              >
+                                Manage
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {myEvents.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
+                            You haven't created any events yet.
                           </td>
                         </tr>
-                      );
-                    })}
-                    {myEvents.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
-                          You haven't created any events yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )
           )}
         </div>
       );
@@ -1925,7 +2378,18 @@ export default function App() {
                           className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
                         />
                       </td>
-                      <td className="px-6 py-4 font-medium text-slate-200">{reg.participantName}</td>
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-200">{reg.participantName}</div>
+                        {reg.participationType === 'team' && (
+                          <div className="text-[10px] text-indigo-400 mt-0.5 flex items-center gap-1.5 font-semibold">
+                            <span>{reg.teamName}</span>
+                            <span className="text-slate-600 font-normal">|</span>
+                            <span className="font-mono bg-indigo-500/10 px-1 rounded border border-indigo-500/20">
+                              {teams.find(t => t.id === reg.teamId)?.inviteCode || 'N/A'}
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-slate-400">{reg.participantEmail}</td>
                       <td className="px-6 py-4"><Badge status={reg.status} /></td>
                       <td className="px-6 py-4">
@@ -2136,12 +2600,46 @@ export default function App() {
                     required
                     type="number"
                     min="1"
-                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     value={newEvent.capacity}
                     onChange={e => setNewEvent({ ...newEvent, capacity: e.target.value })}
                     placeholder="Max attendees"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Participation Mode</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['individual', 'team', 'both'].map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setNewEvent({ ...newEvent, participationMode: mode as ParticipationMode })}
+                        className={`py-2 px-2 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all ${newEvent.participationMode === mode
+                          ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20'
+                          : 'bg-slate-950 border-slate-700 text-slate-500 hover:border-slate-600'
+                          }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(newEvent.participationMode === 'team' || newEvent.participationMode === 'both') && (
+                  <div className="animate-in slide-in-from-top-2 duration-300">
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Max Team Size</label>
+                    <input
+                      required
+                      type="number"
+                      min="2"
+                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      value={newEvent.maxTeamSize}
+                      onChange={e => setNewEvent({ ...newEvent, maxTeamSize: e.target.value })}
+                      placeholder="e.g. 5"
+                    />
+                  </div>
+                )}
 
                 {/* Custom Questions Section */}
                 <div>
@@ -2246,6 +2744,60 @@ export default function App() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Co-Organizers</label>
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      type="email"
+                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="Enter organizer email"
+                      value={collaboratorEmailInput}
+                      onChange={e => setCollaboratorEmailInput(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (collaboratorEmailInput && !newEvent.collaboratorEmails?.includes(collaboratorEmailInput)) {
+                          setNewEvent(prev => ({
+                            ...prev,
+                            collaboratorEmails: [...(prev.collaboratorEmails || []), collaboratorEmailInput]
+                          }));
+                          setCollaboratorEmailInput('');
+                        }
+                      }}
+                      disabled={!collaboratorEmailInput}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {newEvent.collaboratorEmails && newEvent.collaboratorEmails.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {newEvent.collaboratorEmails.map(email => (
+                        <div key={email} className="flex items-center gap-2 bg-slate-800 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-full text-sm">
+                          <span>{email}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewEvent(prev => ({
+                                ...prev,
+                                collaboratorEmails: prev.collaboratorEmails.filter(e => e !== email)
+                              }));
+                            }}
+                            className="text-slate-500 hover:text-red-400"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(!newEvent.collaboratorEmails || newEvent.collaboratorEmails.length === 0) && (
+                    <p className="text-xs text-slate-500 italic">No co-organizers added.</p>
+                  )}
+                </div>
+
+                <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="block text-sm font-medium text-slate-300">Description</label>
                     <button
@@ -2286,14 +2838,87 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-slate-900 w-full h-full sm:h-auto sm:max-w-md sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
             <div className="bg-indigo-600 p-6 text-white relative flex-shrink-0">
-              <button onClick={() => { setSelectedEventForReg(null); setRegistrationAnswers({}); }} className="absolute top-4 right-4 text-white/70 hover:text-white p-1">
+              <button onClick={() => { setSelectedEventForReg(null); setRegistrationAnswers({}); setTeamRegistrationData({ mode: 'individual', subMode: 'create', teamName: '', inviteCode: '' }); }} className="absolute top-4 right-4 text-white/70 hover:text-white p-1">
                 <XCircle className="w-6 h-6" />
               </button>
               <h3 className="text-xl font-bold font-outfit">{selectedEventForReg.title}</h3>
               <p className="text-indigo-200 text-sm mt-1">{format(new Date(selectedEventForReg.date), 'MMMM d, yyyy')}</p>
             </div>
 
-            <form onSubmit={handleRegister} className="p-6 overflow-y-auto custom-scrollbar flex-1">
+            <form onSubmit={handleRegister} className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+              {/* Participation Mode Choice */}
+              {selectedEventForReg.participationMode !== 'individual' && selectedEventForReg.maxTeamSize && (
+                <div className="mb-6 space-y-4">
+                  <label className="block text-sm font-medium text-slate-300 mb-2 font-outfit uppercase tracking-wider text-[11px]">Join As</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {['individual', 'team'].map((m) => {
+                      if (selectedEventForReg.participationMode === 'team' && m === 'individual') return null;
+                      if (selectedEventForReg.participationMode === 'individual' && m === 'team') return null;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setTeamRegistrationData(prev => ({ ...prev, mode: m as any }))}
+                          className={`py-3 px-4 rounded-xl border text-sm font-bold transition-all ${teamRegistrationData.mode === m
+                            ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20 active:scale-95'
+                            : 'bg-slate-950 border-slate-700 text-slate-500 hover:border-slate-600 active:scale-95'
+                            }`}
+                        >
+                          {m === 'individual' ? <UserCircle className="w-4 h-4 mx-auto mb-1" /> : <Users className="w-4 h-4 mx-auto mb-1" />}
+                          {m === 'individual' ? 'Individually' : 'As a Team'}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {teamRegistrationData.mode === 'team' && (
+                    <div className="animate-in slide-in-from-top-2 duration-300 space-y-4 pt-2">
+                      <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setTeamRegistrationData(prev => ({ ...prev, subMode: 'create' }))}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${teamRegistrationData.subMode === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                          Create Team
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTeamRegistrationData(prev => ({ ...prev, subMode: 'join' }))}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${teamRegistrationData.subMode === 'join' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                          Join Team
+                        </button>
+                      </div>
+
+                      {teamRegistrationData.subMode === 'create' ? (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1 uppercase">Team Name</label>
+                          <input
+                            required
+                            type="text"
+                            placeholder="My Awesome Team"
+                            className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            value={teamRegistrationData.teamName}
+                            onChange={e => setTeamRegistrationData(prev => ({ ...prev, teamName: e.target.value }))}
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-400 mb-1 uppercase">Invite Code</label>
+                          <input
+                            required
+                            type="text"
+                            placeholder="ABC123"
+                            className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none uppercase transition-all"
+                            value={teamRegistrationData.inviteCode}
+                            onChange={e => setTeamRegistrationData(prev => ({ ...prev, inviteCode: e.target.value.toUpperCase() }))}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="text-slate-400 mb-6 font-outfit">
                 You are registering as <span className="font-semibold text-white">{currentUser.name}</span> ({currentUser.email}).
               </p>
@@ -2311,6 +2936,7 @@ export default function App() {
                         <input
                           type="text"
                           required={q.required}
+                          value={registrationAnswers[q.id] || ''}
                           className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                           onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                         />
@@ -2324,6 +2950,7 @@ export default function App() {
                               name={q.id}
                               value="yes"
                               required={q.required}
+                              checked={registrationAnswers[q.id] === 'Yes'}
                               onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: 'Yes' }))}
                               className="w-4 h-4 text-indigo-500 focus:ring-indigo-500 bg-slate-950 border-slate-700"
                             />
@@ -2335,6 +2962,7 @@ export default function App() {
                               name={q.id}
                               value="no"
                               required={q.required}
+                              checked={registrationAnswers[q.id] === 'No'}
                               onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: 'No' }))}
                               className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 bg-slate-950 border-slate-700"
                             />
@@ -2346,9 +2974,9 @@ export default function App() {
                       {q.type === 'select' && (
                         <select
                           required={q.required}
+                          value={registrationAnswers[q.id] || ''}
                           className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                           onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                          defaultValue=""
                         >
                           <option value="" disabled>Select an option</option>
                           {q.options?.map(opt => (
@@ -2439,6 +3067,8 @@ export default function App() {
                   </button>
                 </div>
               </form>
+
+
             </div>
           </div>
         )
@@ -2451,8 +3081,8 @@ export default function App() {
             <div className="bg-slate-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
               <div className="flex justify-between items-center p-6 border-b border-slate-800 bg-slate-900">
                 <div>
-                  <h3 className="text-xl font-bold text-white">Participant Details</h3>
-                  <p className="text-sm text-slate-400">{selectedRegistrationDetails.participantName}</p>
+                  <h3 className="text-xl font-bold text-white">Registration Details</h3>
+                  <p className="text-sm text-slate-400">View your entry information</p>
                 </div>
                 <button
                   onClick={() => setSelectedRegistrationDetails(null)}
@@ -2462,50 +3092,119 @@ export default function App() {
                 </button>
               </div>
               <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs font-semibold text-slate-400 uppercase">Status</p>
-                      <div className="mt-1"><Badge status={selectedRegistrationDetails.status} /></div>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-400 uppercase">Attended</p>
-                      <p className={`mt-1 font-medium ${selectedRegistrationDetails.attended ? 'text-green-400' : 'text-slate-400'}`}>
-                        {selectedRegistrationDetails.attended ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                  </div>
+                <div className="space-y-6">
+                  {(() => {
+                    const event = events.find(e => e.id === selectedRegistrationDetails.eventId);
+                    if (!event) return null;
+                    return (
+                      <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700/50">
+                        <h4 className="font-bold text-white mb-2">{event.title}</h4>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                            {format(new Date(event.date), 'MMMM d, yyyy h:mm a')}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+                            {renderLocation(event.location, event.locationType)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
-                  <div>
-                    <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Email</p>
-                    <p className="text-slate-200">{selectedRegistrationDetails.participantEmail}</p>
-                  </div>
-
-                  {selectedRegistrationDetails.answers && Object.keys(selectedRegistrationDetails.answers).length > 0 ? (
-                    <div className="pt-4 border-t border-slate-800">
-                      <p className="text-sm font-bold text-white mb-3">Custom Responses</p>
-                      <div className="space-y-3">
-                        {(() => {
-                          // Helper to find question text
-                          const event = events.find(e => e.id === selectedRegistrationDetails.eventId);
-                          if (!event || !event.customQuestions) return <p className="text-slate-400 italic">Questions not found</p>;
-
-                          return event.customQuestions.map(q => {
-                            const answer = selectedRegistrationDetails.answers?.[q.id];
-                            if (!answer) return null;
-                            return (
-                              <div key={q.id} className="bg-slate-800 p-3 rounded-lg border border-slate-700">
-                                <p className="text-xs text-slate-400 mb-1">{q.question}</p>
-                                <p className="text-sm font-medium text-slate-200">{answer}</p>
-                              </div>
-                            );
-                          });
-                        })()}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center text-indigo-400">
+                        <UserCircle className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white leading-tight">{selectedRegistrationDetails.participantName}</p>
+                        <p className="text-xs text-slate-500">{selectedRegistrationDetails.participantEmail}</p>
                       </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-slate-400 italic pt-2">No custom answers provided.</p>
-                  )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase">Status</p>
+                        <div className="mt-1"><Badge status={selectedRegistrationDetails.status} /></div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase">Attended</p>
+                        <p className={`mt-1 font-medium ${selectedRegistrationDetails.attended ? 'text-green-400' : 'text-slate-400'}`}>
+                          {selectedRegistrationDetails.attended ? 'Yes' : 'No'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedRegistrationDetails.participationType === 'team' && (
+                      <div className="bg-indigo-900/20 border border-indigo-500/20 p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Team</p>
+                          <p className="text-slate-200 font-bold text-lg">{selectedRegistrationDetails.teamName}</p>
+                          <p className="text-[10px] text-indigo-300/70 mt-0.5">{selectedRegistrationDetails.isTeamLeader ? 'Team Leader' : 'Team Member'}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Team Code</p>
+                          <div className="flex items-center gap-2">
+                            <div className="relative group">
+                              <p className="text-slate-100 font-mono font-bold bg-indigo-500/20 px-3 py-1.5 rounded-lg border border-indigo-500/30 select-all">
+                                {teams.find(t => t.id === selectedRegistrationDetails.teamId)?.inviteCode || 'N/A'}
+                              </p>
+                              {(() => {
+                                const code = teams.find(t => t.id === selectedRegistrationDetails.teamId)?.inviteCode;
+                                if (code) {
+                                  return (
+                                    <button
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(code);
+                                        addToast('Team code copied!', 'success');
+                                      }}
+                                      className="absolute -right-2 -top-2 p-1.5 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all scale-0 group-hover:scale-100 active:scale-95"
+                                      title="Copy Code"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Email</p>
+                      <p className="text-slate-200">{selectedRegistrationDetails.participantEmail}</p>
+                    </div>
+
+                    {selectedRegistrationDetails.answers && Object.keys(selectedRegistrationDetails.answers).length > 0 ? (
+                      <div className="pt-4 border-t border-slate-800">
+                        <p className="text-sm font-bold text-white mb-3">Custom Responses</p>
+                        <div className="space-y-3">
+                          {(() => {
+                            // Helper to find question text
+                            const event = events.find(e => e.id === selectedRegistrationDetails.eventId);
+                            if (!event || !event.customQuestions) return <p className="text-slate-400 italic">Questions not found</p>;
+
+                            return event.customQuestions.map(q => {
+                              const answer = selectedRegistrationDetails.answers?.[q.id];
+                              if (!answer) return null;
+                              return (
+                                <div key={q.id} className="bg-slate-800 p-3 rounded-lg border border-slate-700">
+                                  <p className="text-xs text-slate-400 mb-1">{q.question}</p>
+                                  <p className="text-sm font-medium text-slate-200">{answer}</p>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-400 italic pt-2">No custom answers provided.</p>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="p-4 bg-slate-900 border-t border-slate-800 rounded-b-2xl">
@@ -2674,10 +3373,16 @@ export default function App() {
               >
                 Discussion
               </button>
+              <button
+                onClick={() => setDetailsTab('reviews')}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'reviews' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Reviews
+              </button>
             </div>
 
             <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar flex-1">
-              {detailsTab === 'info' ? (
+              {detailsTab === 'info' && (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 mb-8">
                     <div className="space-y-4">
@@ -2736,8 +3441,92 @@ export default function App() {
                       </p>
                     </div>
                   </div>
+
+                  <div className="border-t border-slate-800 pt-6 mt-6">
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-3">Share Event</p>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}/?event=${selectedEventForDetails.id}`;
+                          navigator.clipboard.writeText(url);
+                          addToast('Link copied to clipboard!', 'success');
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-medium transition-colors border border-slate-700"
+                      >
+                        <Copy className="w-4 h-4" /> Copy Link
+                      </button>
+                      <a
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out ${selectedEventForDetails.title} on EventHorizon!`)}&url=${encodeURIComponent(`${window.location.origin}/?event=${selectedEventForDetails.id}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#1DA1F2]/10 hover:bg-[#1DA1F2]/20 text-[#1DA1F2] rounded-lg text-sm font-medium transition-colors border border-[#1DA1F2]/20"
+                      >
+                        <Twitter className="w-4 h-4" /> Twitter
+                      </a>
+                      <a
+                        href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}/?event=${selectedEventForDetails.id}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#1877F2]/10 hover:bg-[#1877F2]/20 text-[#1877F2] rounded-lg text-sm font-medium transition-colors border border-[#1877F2]/20"
+                      >
+                        <Facebook className="w-4 h-4" /> Facebook
+                      </a>
+                      <a
+                        href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${window.location.origin}/?event=${selectedEventForDetails.id}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#0A66C2]/10 hover:bg-[#0A66C2]/20 text-[#0A66C2] rounded-lg text-sm font-medium transition-colors border border-[#0A66C2]/20"
+                      >
+                        <Linkedin className="w-4 h-4" /> LinkedIn
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-800 pt-6 mt-6">
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-3">Add to Calendar</p>
+                    <div className="flex flex-wrap gap-3">
+                      <a
+                        href={`https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(selectedEventForDetails.title)}&dates=${format(new Date(selectedEventForDetails.date), "yyyyMMdd'T'HHmmss").replace(/-|:/g, '')}/${format(new Date(selectedEventForDetails.endDate), "yyyyMMdd'T'HHmmss").replace(/-|:/g, '')}&details=${encodeURIComponent(selectedEventForDetails.description)}&location=${encodeURIComponent(selectedEventForDetails.location)}&sf=true&output=xml`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-sm font-medium transition-colors border border-indigo-600/20"
+                      >
+                        <CalendarPlus className="w-4 h-4" /> Google Calendar
+                      </a>
+                      <button
+                        onClick={() => {
+                          const event = selectedEventForDetails;
+                          const icsContent = [
+                            'BEGIN:VCALENDAR',
+                            'VERSION:2.0',
+                            'BEGIN:VEVENT',
+                            `SUMMARY:${event.title}`,
+                            `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`,
+                            `DTSTART:${format(new Date(event.date), "yyyyMMdd'T'HHmmss").replace(/-|:/g, '')}`,
+                            `DTEND:${format(new Date(event.endDate), "yyyyMMdd'T'HHmmss").replace(/-|:/g, '')}`,
+                            `LOCATION:${event.location}`,
+                            'END:VEVENT',
+                            'END:VCALENDAR'
+                          ].join('\n');
+
+                          const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                          const link = document.createElement('a');
+                          link.href = window.URL.createObjectURL(blob);
+                          link.setAttribute('download', `${event.title.replace(/\s+/g, '_')}.ics`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-medium transition-colors border border-slate-700"
+                      >
+                        <Download className="w-4 h-4" /> Download .ICS
+                      </button>
+                    </div>
+                  </div>
                 </>
-              ) : (
+              )}
+
+              {detailsTab === 'discussion' && (
                 <div className="h-full flex flex-col min-h-[400px]">
                   <div className="flex-1 space-y-4 mb-4 overflow-y-auto pr-2 custom-scrollbar">
                     {isMessagesLoading ? (
@@ -2787,6 +3576,125 @@ export default function App() {
                   </form>
                 </div>
               )}
+
+              {detailsTab === 'reviews' && (
+                <div className="h-full flex flex-col min-h-[400px]">
+                  {isReviewsLoading ? (
+                    <div className="py-20 text-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-slate-700 mx-auto" />
+                      <p className="text-slate-500 text-sm mt-3 font-medium">Loading reviews...</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Average Rating Section */}
+                      {reviews.length > 0 && (
+                        <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 mb-6 flex items-center justify-between">
+                          <div>
+                            <div className="text-3xl font-bold text-white flex items-center gap-2">
+                              {(reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length).toFixed(1)}
+                              <Star className="w-6 h-6 text-amber-400 fill-amber-400" />
+                            </div>
+                            <p className="text-sm text-slate-400 mt-1">
+                              Average Rating based on {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-1 text-xs text-slate-500">
+                            {[5, 4, 3, 2, 1].map(r => {
+                              const count = reviews.filter(rev => rev.rating === r).length;
+                              const percentage = (count / reviews.length) * 100;
+                              return (
+                                <div key={r} className="flex items-center gap-2">
+                                  <span className="w-3">{r}</span>
+                                  <Star className="w-3 h-3 text-slate-600" />
+                                  <div className="w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                    <div className="h-full bg-amber-500" style={{ width: `${percentage}%` }} />
+                                  </div>
+                                  <span className="w-6 text-right">{count}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex-1 space-y-6 mb-6 overflow-y-auto pr-2 custom-scrollbar">
+                        {reviews.length > 0 ? (
+                          reviews.map(review => (
+                            <div key={review.id} className="bg-slate-800/50 p-4 rounded-xl border border-slate-800">
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
+                                    {review.userName.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-200">{review.userName}</p>
+                                    <p className="text-[10px] text-slate-500">{format(new Date(review.createdAt), 'MMM d, yyyy')}</p>
+                                  </div>
+                                </div>
+                                <div className="flex text-amber-400">
+                                  {[1, 2, 3, 4, 5].map(star => (
+                                    <Star key={star} className={`w-3 h-3 ${star <= review.rating ? 'fill-current' : 'text-slate-700'}`} />
+                                  ))}
+                                </div>
+                              </div>
+                              <p className="text-sm text-slate-300 italic">"{review.comment}"</p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="py-16 text-center">
+                            <Star className="w-12 h-12 text-slate-800 mx-auto mb-4" />
+                            <p className="text-slate-400 text-sm font-medium">No reviews yet.</p>
+                            <p className="text-slate-500 text-xs mt-1">Attendees can leave reviews after the event.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Review Form - Only for Attendees who have attended */}
+                      {currentUser.role === 'attendee' &&
+                        registrations.some(r =>
+                          r.eventId === selectedEventForDetails.id &&
+                          r.participantEmail === currentUser.email &&
+                          r.status === 'approved' &&
+                          (r.attended || new Date(selectedEventForDetails.date) < new Date())
+                        ) &&
+                        !reviews.some(r => r.userId === currentUser.id) && (
+                          <form onSubmit={handleSubmitReview} className="mt-auto pt-6 border-t border-slate-800">
+                            <h4 className="text-sm font-bold text-white mb-3">Leave a Review</h4>
+                            <div className="flex gap-2 mb-3">
+                              {[1, 2, 3, 4, 5].map(s => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => setRating(s)}
+                                  className="focus:outline-none transition-transform hover:scale-110"
+                                >
+                                  <Star className={`w-6 h-6 ${s <= rating ? 'text-amber-400 fill-current' : 'text-slate-700'}`} />
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                required
+                                minLength={5}
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all"
+                                placeholder="Share your experience..."
+                                value={reviewComment}
+                                onChange={e => setReviewComment(e.target.value)}
+                              />
+                              <button
+                                type="submit"
+                                className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all font-medium text-sm shadow-lg shadow-indigo-600/20 active:scale-95"
+                              >
+                                Post
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="p-6 sm:p-8 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row gap-4 flex-shrink-0">
@@ -2797,30 +3705,64 @@ export default function App() {
                 Close
               </button>
               {currentUser.role === 'attendee' && (
-                <button
-                  onClick={() => {
-                    const isRegistered = registrations.some(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email);
-                    if (!isRegistered) {
-                      setSelectedEventForReg(selectedEventForDetails);
-                      setSelectedEventForDetails(null);
-                    }
-                  }}
-                  disabled={registrations.some(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email)}
-                  className={`order-1 sm:order-2 flex-[2] px-6 py-3 rounded-xl font-bold transition-all shadow-lg font-outfit ${registrations.some(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email)
-                    ? 'bg-green-900/40 text-green-400 border border-green-800 cursor-default'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20 active:scale-95'
-                    }`}
-                >
-                  {registrations.some(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email)
-                    ? 'Registered'
-                    : 'Register Now'}
-                </button>
+                (() => {
+                  const isRegistered = registrations.some(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email);
+                  const currentRegsCount = registrations.filter(r => r.eventId === selectedEventForDetails.id && r.status !== RegistrationStatus.REJECTED).length;
+                  const isFull = currentRegsCount >= (selectedEventForDetails.capacity as number);
+                  const now = new Date();
+                  const startDate = new Date(selectedEventForDetails.date);
+                  const endDate = selectedEventForDetails.endDate ? new Date(selectedEventForDetails.endDate) : new Date(startDate.getTime() + 3600000);
+
+                  const isLive = now >= startDate && now <= endDate;
+                  const isPast = now > endDate;
+                  const isClosed = selectedEventForDetails.isRegistrationOpen === false || now >= startDate;
+
+                  return (
+                    <button
+                      onClick={() => {
+                        if (isRegistered) {
+                          const myReg = registrations.find(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email);
+                          if (myReg) setSelectedRegistrationDetails(myReg);
+                        } else if (!isClosed) {
+                          setSelectedEventForReg(selectedEventForDetails);
+                          setSelectedEventForDetails(null);
+                        }
+                      }}
+                      disabled={!isRegistered && isClosed}
+                      className={`order-1 sm:order-2 flex-[2] px-6 py-3 rounded-xl font-bold transition-all shadow-lg font-outfit ${isRegistered
+                        ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-500 hover:bg-indigo-900/60 active:scale-95'
+                        : isClosed
+                          ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
+                          : isFull
+                            ? 'bg-amber-600/20 text-amber-500 border border-amber-600/40 hover:bg-amber-600/30 active:scale-95'
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20 active:scale-95'
+                        }`}
+                    >
+                      {isRegistered ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 inline mr-2" /> View Registration
+                        </>
+                      ) : isClosed ? (
+                        <>
+                          <XCircle className="w-4 h-4 inline mr-2" /> {isPast ? 'Event Ended' : 'Registration Closed'}
+                        </>
+                      ) : isFull ? (
+                        <>
+                          <Clock className="w-4 h-4 inline mr-2" /> Join Waitlist
+                        </>
+                      ) : (
+                        <>
+                          <CalendarPlus className="w-4 h-4 inline mr-2" /> Register Now
+                        </>
+                      )}
+                    </button>
+                  );
+                })()
               )}
             </div>
           </div>
         </div>
       )}
-
     </div >
   );
 }

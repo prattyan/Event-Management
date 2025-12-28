@@ -8,19 +8,10 @@ import {
   sendPasswordResetEmail
 } from "firebase/auth";
 import {
-  collection,
-  getDocs,
-  addDoc,
-  updateDoc,
-  doc,
-  query,
-  where,
-  setDoc,
-  getDoc,
-  deleteDoc
-} from "firebase/firestore";
+  getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, getDoc, setDoc, limit
+} from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured, googleProvider } from "../firebaseConfig";
-import { Event, Registration, RegistrationStatus, User } from '../types';
+import { Event, Registration, RegistrationStatus, User, Team, ParticipationMode } from '../types';
 import { STORAGE_KEYS } from '../constants';
 
 // --- Configuration ---
@@ -44,27 +35,38 @@ const USE_FIREBASE_AUTH = isFirebaseConfigured; // Can use Firebase Auth even wi
 
 // --- Helper Functions for MongoDB Data API ---
 
-async function mongoRequest(action: string, collection: string, body: any = {}) {
-  // Call our proxy/serverless function
-  // Structure: /api/action/<action_name>
-  const response = await fetch(`${MONGO_CONFIG.endpoint}/${action}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      collection: collection,
-      ...body
-    })
-  });
+async function mongoRequest(action: string, collection: string, body: any, retries = 3): Promise<any> {
+  if (!MONGO_CONFIG.endpoint) return null;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("MongoDB API Error:", response.status, response.statusText, errorText);
-    throw new Error(`MongoDB API Error: ${response.statusText} - ${errorText}`);
+  try {
+    const response = await fetch(`${MONGO_CONFIG.endpoint}/${action}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        collection: collection,
+        ...body
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // If server is starting up (502/504/500), maybe retry?
+      // But usually fetch throws for ECONNREFUSED.
+      console.error("MongoDB API Error:", response.status, response.statusText, errorText);
+      throw new Error(`MongoDB API Error: ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (retries > 0) {
+      console.log(`Fetch failed, retrying... (${retries} left)`);
+      await new Promise(res => setTimeout(res, 1000));
+      return mongoRequest(action, collection, body, retries - 1);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 // --- Events ---
@@ -72,9 +74,20 @@ async function mongoRequest(action: string, collection: string, body: any = {}) 
 export const getEvents = async (): Promise<Event[]> => {
   if (USE_MONGO) {
     try {
-      const result = await mongoRequest('find', 'events', { filter: {} });
-      // Map MongoDB _id to application id
-      return result.documents.map((doc: any) => ({ ...doc, id: doc.id || doc._id }));
+      // Fetch only upcoming/recent 50 events to prevent massive payload
+      // Fetch only upcoming/recent 12 events to prevent massive payload
+      const result = await mongoRequest('find', 'events', {
+        filter: {},
+        limit: 12,
+        projection: { imageUrl: 0, description: 0 }
+      });
+      // Map MongoDB _id to application id and ensure optional fields are handled
+      return result.documents.map((doc: any) => ({
+        ...doc,
+        id: doc.id || doc._id,
+        imageUrl: '', // default for list view
+        description: doc.description || ''
+      }));
     } catch (e) {
       console.error("Mongo fetch events failed", e);
       return [];
@@ -83,7 +96,9 @@ export const getEvents = async (): Promise<Event[]> => {
 
   if (USE_FIREBASE_STORAGE) {
     try {
-      const querySnapshot = await getDocs(collection(db, "events"));
+      // Logic for Firebase would be similar if using backend SDK, but client SDK downloads whole doc.
+      // Firestore doesn't support projection in client SDK easily without cloud functions.
+      const querySnapshot = await getDocs(query(collection(db, "events"), limit(50)));
       return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
     } catch (e) {
       console.error("Firebase getEvents failed:", e);
@@ -94,6 +109,42 @@ export const getEvents = async (): Promise<Event[]> => {
   // Fallback / Local Storage
   const stored = localStorage.getItem(STORAGE_KEYS.EVENTS);
   return stored ? JSON.parse(stored) : [];
+};
+
+export const getEventImage = async (id: string): Promise<string | null> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('findOne', 'events', {
+        filter: { id: id },
+        projection: { imageUrl: 1 }
+      });
+      return result.document?.imageUrl || null;
+    } catch (e) {
+      console.error("Mongo fetch event image failed", e);
+      return null;
+    }
+  }
+  return null;
+};
+
+export const getEventById = async (id: string): Promise<Event | null> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('findOne', 'events', { filter: { id: id } });
+      return result.document ? { ...result.document, id: result.document.id || result.document._id } : null;
+    } catch (e) {
+      console.error("Mongo fetch event details failed", e);
+      return null;
+    }
+  }
+  // ... Firebase/Local impls (usually already have data or can fetch)
+  if (USE_FIREBASE_STORAGE) {
+    const snap = await getDoc(doc(db, "events", id));
+    return snap.exists() ? ({ id: snap.id, ...snap.data() } as Event) : null;
+  }
+
+  const events = await getEvents(); // access local cache
+  return events.find(e => e.id === id) || null;
 };
 
 export const saveEvent = async (event: Omit<Event, 'id'>): Promise<Event | null> => {
@@ -485,6 +536,93 @@ export const markAttendance = async (id: string): Promise<boolean> => {
   return found;
 };
 
+// --- Teams ---
+
+export const createTeam = async (team: Omit<Team, 'id'>): Promise<Team | null> => {
+  const newId = crypto.randomUUID();
+  const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const newTeam = { ...team, id: newId, inviteCode } as Team;
+
+  if (USE_MONGO) {
+    try {
+      await mongoRequest('insertOne', 'teams', { document: newTeam });
+      return newTeam;
+    } catch (e) {
+      console.error("Mongo create team failed", e);
+      return null;
+    }
+  }
+
+  // Local fallback
+  const stored = localStorage.getItem('teams') || '[]';
+  const teams = JSON.parse(stored);
+  teams.push(newTeam);
+  localStorage.setItem('teams', JSON.stringify(teams));
+  return newTeam;
+};
+
+export const getTeamByInviteCode = async (code: string): Promise<Team | null> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('findOne', 'teams', { filter: { inviteCode: code } });
+      return result.document ? { ...result.document, id: result.document.id || result.document._id } : null;
+    } catch (e) {
+      console.error("Mongo get team by code failed", e);
+      return null;
+    }
+  }
+  return null;
+};
+
+export const getTeamById = async (id: string): Promise<Team | null> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('findOne', 'teams', { filter: { id: id } });
+      return result.document ? { ...result.document, id: result.document.id || result.document._id } : null;
+    } catch (e) {
+      console.error("Mongo get team by id failed", e);
+      return null;
+    }
+  }
+  return null;
+};
+
+export const joinTeam = async (teamId: string, user: { userId: string, userName: string, email: string }): Promise<boolean> => {
+  if (USE_MONGO) {
+    try {
+      const team = await getTeamById(teamId);
+      if (!team) return false;
+
+      // Check if user already in team
+      if (team.members.some(m => m.userId === user.userId)) return true;
+
+      const newMembers = [...team.members, user];
+      await mongoRequest('updateOne', 'teams', {
+        filter: { id: teamId },
+        update: { $set: { members: newMembers } }
+      });
+      return true;
+    } catch (e) {
+      console.error("Mongo join team failed", e);
+      return false;
+    }
+  }
+  return false;
+};
+
+export const getTeamsByEventId = async (eventId: string): Promise<Team[]> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('find', 'teams', { filter: { eventId: eventId } });
+      return result.documents.map((doc: any) => ({ ...doc, id: doc.id || doc._id }));
+    } catch (e) {
+      console.error("Mongo fetch teams failed", e);
+      return [];
+    }
+  }
+  return [];
+};
+
 // --- Auth & Users ---
 
 // Retrieve user profile
@@ -521,11 +659,15 @@ export const saveUserProfile = async (user: User): Promise<void> => {
       // Check if exists first to avoid duplicates if using simplistic insert
       const existing = await getUserProfile(user.id);
       if (!existing) {
-        await mongoRequest('insertOne', 'users', { document: user });
+        // For insert, we can leave it as is, Mongo will generate _id or use ours if provided (but usually we shouldn't provide it)
+        const { _id, ...cleanUser } = user as any;
+        await mongoRequest('insertOne', 'users', { document: cleanUser });
       } else {
+        // Strip _id before update to avoid immutable field error
+        const { _id, ...updateData } = user as any;
         await mongoRequest('updateOne', 'users', {
           filter: { id: user.id },
-          update: { $set: user }
+          update: { $set: updateData }
         });
       }
       return;
@@ -904,4 +1046,201 @@ export const addMessage = async (message: Omit<any, 'id'>): Promise<void> => {
   const stored = localStorage.getItem('eh_messages');
   const messages = stored ? JSON.parse(stored) : [];
   localStorage.setItem('eh_messages', JSON.stringify([...messages, newMessage]));
+};
+
+// --- Reviews ---
+
+export const getReviews = async (eventId: string): Promise<any[]> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('find', 'reviews', { filter: { eventId: eventId } });
+      return result.documents.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) {
+      console.error("Mongo fetch reviews failed", e);
+      return [];
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      const q = query(
+        collection(db, "reviews"),
+        where("eventId", "==", eventId)
+      );
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) {
+      console.error("Firebase getReviews failed:", e);
+      return [];
+    }
+  }
+
+  const stored = localStorage.getItem('reviews');
+  const reviews = stored ? JSON.parse(stored) : [];
+  return reviews.filter((r: any) => r.eventId === eventId).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
+export const addReview = async (review: Omit<any, 'id'>): Promise<void> => {
+  const newId = crypto.randomUUID();
+  const newReview = { ...review, id: newId, createdAt: new Date().toISOString() };
+
+  if (USE_MONGO) {
+    try {
+      await mongoRequest('insertOne', 'reviews', { document: newReview });
+      return;
+    } catch (e) {
+      console.error("Mongo add review failed", e);
+      return;
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      await addDoc(collection(db, "reviews"), newReview);
+      return;
+    } catch (e) {
+      console.error("Firebase addReview failed:", e);
+      return;
+    }
+  }
+
+  const stored = localStorage.getItem('reviews');
+  const reviews = stored ? JSON.parse(stored) : [];
+  localStorage.setItem('reviews', JSON.stringify([...reviews, newReview]));
+};
+
+// --- Account Management ---
+
+export const deleteAccount = async (userId: string, isOrganizer: boolean): Promise<boolean> => {
+  console.log(`[Delete Account] Starting deletion for user: ${userId} (Organizer: ${isOrganizer})`);
+
+  if (USE_MONGO) {
+    try {
+      // 1. Delete User Profile
+      await mongoRequest('deleteOne', 'users', { filter: { id: userId } });
+
+      // 2. Delete Registrations (as participant)
+      await mongoRequest('deleteMany', 'registrations', { filter: { participantId: userId } });
+
+      // 3. Delete Notifications
+      await mongoRequest('deleteMany', 'notifications', { filter: { userId: userId } });
+
+      // 4. Delete Messages (sent by user)
+      await mongoRequest('deleteMany', 'messages', { filter: { userId: userId } });
+
+      // 5. Delete Reviews (written by user)
+      await mongoRequest('deleteMany', 'reviews', { filter: { userId: userId } });
+
+      // 6. If Organizer: Delete Events and their related data
+      if (isOrganizer) {
+        // Find events first to delete their registrations
+        const eventsResult = await mongoRequest('find', 'events', { filter: { organizerId: userId } });
+        const events = eventsResult.documents || [];
+
+        for (const event of events) {
+          // Delete registrations for this event
+          await mongoRequest('deleteMany', 'registrations', { filter: { eventId: event.id } });
+          // Delete messages for this event
+          await mongoRequest('deleteMany', 'messages', { filter: { eventId: event.id } });
+          // Delete reviews for this event
+          await mongoRequest('deleteMany', 'reviews', { filter: { eventId: event.id } });
+        }
+
+        // Finally delete the events
+        await mongoRequest('deleteMany', 'events', { filter: { organizerId: userId } });
+      }
+
+      // 7. Delete from Firebase Auth (if currently signed in)
+      const user = auth.currentUser;
+      if (user && user.uid === userId) {
+        await user.delete();
+      }
+
+      return true;
+    } catch (e) {
+      console.error("Mongo delete account failed", e);
+      return false;
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    try {
+      // Note: Firestore deletions are usually done via batch or cloud functions for this scale.
+      // Doing simplified client-side deletion here.
+
+      // 1. User Profile
+      await deleteDoc(doc(db, "users", userId));
+
+      // 2. Registrations
+      const regQ = query(collection(db, "registrations"), where("participantId", "==", userId));
+      const regSnap = await getDocs(regQ);
+      regSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+      // 3. Notifications
+      const notifQ = query(collection(db, "notifications"), where("userId", "==", userId));
+      const notifSnap = await getDocs(notifQ);
+      notifSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+      // 4. Messages
+      const msgQ = query(collection(db, "messages"), where("userId", "==", userId));
+      const msgSnap = await getDocs(msgQ);
+      msgSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+      // 5. Reviews
+      const reviewQ = query(collection(db, "reviews"), where("userId", "==", userId));
+      const reviewSnap = await getDocs(reviewQ);
+      reviewSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+      // 6. Organizer Data
+      if (isOrganizer) {
+        const eventQ = query(collection(db, "events"), where("organizerId", "==", userId));
+        const eventSnap = await getDocs(eventQ);
+
+        for (const eventDoc of eventSnap.docs) {
+          const eventId = eventDoc.id;
+          // Delete related regs
+          const eRegQ = query(collection(db, "registrations"), where("eventId", "==", eventId));
+          const eRegSnap = await getDocs(eRegQ);
+          eRegSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+          // Delete messages
+          const eMsgQ = query(collection(db, "messages"), where("eventId", "==", eventId));
+          const eMsgSnap = await getDocs(eMsgQ);
+          eMsgSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+          // Delete reviews
+          const eRevQ = query(collection(db, "reviews"), where("eventId", "==", eventId));
+          const eRevSnap = await getDocs(eRevQ);
+          eRevSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+          // Delete event
+          await deleteDoc(eventDoc.ref);
+        }
+      }
+
+      // 7. Auth
+      const user = auth.currentUser;
+      if (user && user.uid === userId) {
+        await user.delete();
+      }
+
+      return true;
+    } catch (e) {
+      console.error("Firebase delete account failed", e);
+      return false;
+    }
+  }
+
+  // Local Storage
+  const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
+  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users.filter((u: any) => u.id !== userId)));
+
+  const regs = JSON.parse(localStorage.getItem(STORAGE_KEYS.REGISTRATIONS) || '[]');
+  localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(regs.filter((r: any) => r.participantId !== userId)));
+
+  // ... cleanup other local storage keys similarly ...
+  // For demo, we might just clear current user
+  localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+
+  return true;
 };

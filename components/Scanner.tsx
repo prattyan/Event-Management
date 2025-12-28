@@ -60,7 +60,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
     }
 
     try {
-      const scanner = new Html5Qrcode(mountRef.current.id);
+      const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
 
       const config = {
@@ -70,39 +70,67 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
       };
 
-      await scanner.start(
-        { facingMode: "environment" },
-        config,
-        (decodedText) => {
-          playBeep();
-          onScan(decodedText);
-          // Pause to prevent duplicate scans of the same code
-          scanner.pause(true);
-          setTimeout(() => {
-            try {
-              scanner.resume();
-            } catch (e) {
-              console.log("Scanner resume failed or scanner stopped", e);
-            }
-          }, 2000);
-        },
-        (errorMessage) => {
-          // ignore parsing errors
-        }
-      );
+      // Try environment first, then any camera
+      try {
+        await scanner.start(
+          { facingMode: "environment" },
+          config,
+          (decodedText) => {
+            playBeep();
+            onScan(decodedText);
+            scanner.pause(true);
+            setTimeout(() => {
+              try {
+                scanner.resume();
+              } catch (e) {
+                console.log("Scanner resume failed", e);
+              }
+            }, 2000);
+          },
+          () => { } // Error parsing
+        );
+      } catch (firstErr) {
+        console.warn("Environment camera failed, trying fallback...", firstErr);
+        // Fallback: try user camera or first available
+        await scanner.start(
+          { facingMode: "user" },
+          config,
+          (decodedText) => {
+            playBeep();
+            onScan(decodedText);
+            scanner.pause(true);
+            setTimeout(() => {
+              try {
+                scanner.resume();
+              } catch (e) {
+                console.log("Scanner resume failed", e);
+              }
+            }, 2000);
+          },
+          () => { }
+        );
+      }
 
       setIsScanning(true);
       setError(null);
     } catch (err: any) {
       console.error("Scanner init error", err);
-      let msg = "Camera access failed.";
+      let msg = `Camera access failed (${err?.name || 'Unknown error'}).`;
+
       if (err?.name === "NotAllowedError" || err?.message?.includes("Permission")) {
         msg = "Camera permission denied. Please allow camera access in your browser settings.";
       } else if (err?.name === "NotFoundError") {
         msg = "No camera found on this device.";
       } else if (err?.name === "NotReadableError") {
         msg = "Camera is currently in use by another application.";
+      } else if (err?.name === "OverconstrainedError") {
+        msg = "Could not find a camera that meets the requirements.";
+      } else if (err?.name === "SecurityError") {
+        msg = "Camera access blocked. Ensure you are using HTTPS or localhost.";
+      } else if (err?.message) {
+        msg = `Camera error: ${err.message}`;
       }
+
       setError(msg);
       setIsScanning(false);
     }

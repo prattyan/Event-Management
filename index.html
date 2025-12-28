@@ -53,11 +53,16 @@
   <script type="module" src="/index.tsx"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js');
+      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        for (let registration of registrations) {
+          registration.unregister().then(function (boolean) {
+            console.log('Service Worker unregistered: ', boolean);
+          });
+        }
       });
     }
   </script>
+
   <script>
     tailwind.config = {
       theme: {

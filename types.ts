@@ -16,6 +16,8 @@ export interface CustomQuestion {
   options?: string[]; // For 'select' type, comma separated in UI?
 }
 
+export type ParticipationMode = 'individual' | 'team' | 'both';
+
 export interface Event {
   id: string;
   title: string;
@@ -29,6 +31,9 @@ export interface Event {
   organizerId: string;
   isRegistrationOpen?: boolean;
   customQuestions?: CustomQuestion[];
+  collaboratorEmails?: string[];
+  participationMode?: ParticipationMode;
+  maxTeamSize?: number;
 }
 
 export enum RegistrationStatus {
@@ -49,6 +54,24 @@ export interface Registration {
   attendanceTime?: string;
   registeredAt: string;
   answers?: Record<string, string>; // questionId -> answer
+  participationType: 'individual' | 'team';
+  teamId?: string;
+  teamName?: string;
+  isTeamLeader?: boolean;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  eventId: string;
+  leaderId: string;
+  inviteCode: string;
+  members: {
+    userId: string;
+    userName: string;
+    email: string;
+  }[];
+  createdAt: string;
 }
 
 export type Tab = 'browse' | 'my-tickets' | 'organizer';
@@ -76,5 +99,15 @@ export interface Message {
   userId: string;
   userName: string;
   content: string;
+  createdAt: string;
+}
+
+export interface Review {
+  id: string;
+  eventId: string;
+  userId: string;
+  userName: string;
+  rating: number; // 1-5
+  comment: string;
   createdAt: string;
 }
