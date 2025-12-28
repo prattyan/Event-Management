@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 
 // Use localhost for development. In production, this would be your server's URL.
-const SOCKET_URL = 'http://localhost:5000';
+const IS_PROD = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
+const SOCKET_URL = IS_PROD ? window.location.origin : 'http://localhost:5000';
 
 class SocketService {
     private socket: Socket | null = null;

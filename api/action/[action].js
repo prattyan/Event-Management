@@ -56,12 +56,20 @@ export default async function handler(req, res) {
 
         switch (action) {
             case 'find':
-                result = await col.find(filter || {}).toArray();
+                const query = filter || {};
+                const options = {};
+                if (req.body.limit) options.limit = parseInt(req.body.limit);
+                if (req.body.projection) options.projection = req.body.projection;
+                if (req.body.sort) options.sort = req.body.sort;
+
+                result = await col.find(query, options).toArray();
                 res.status(200).json({ documents: result });
                 break;
 
             case 'findOne':
-                result = await col.findOne(filter || {});
+                const findOneOptions = {};
+                if (req.body.projection) findOneOptions.projection = req.body.projection;
+                result = await col.findOne(filter || {}, findOneOptions);
                 res.status(200).json({ document: result });
                 break;
 
