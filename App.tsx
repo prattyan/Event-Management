@@ -4,7 +4,7 @@ import {
   Calendar, MapPin, Plus, QrCode, CheckCircle, XCircle, Sparkles, ScanLine,
   Search, Users, Clock, X, Check, ChevronRight, ChevronLeft, Trash2, Edit,
   Save, Upload, Image as ImageIcon, Loader2, Menu, LogOut, Download, Bell,
-  Send, MessageSquare, UserCircle, KeyRound, Mail, Filter
+  Send, MessageSquare, UserCircle, KeyRound, Mail, Filter, ExternalLink
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
@@ -158,6 +158,30 @@ export default function App() {
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
+  const renderLocation = (location: string, type: 'online' | 'offline', className?: string) => {
+    const isLink = type === 'online' && (location.startsWith('http') || location.includes('.') || location.toLowerCase().includes('zoom') || location.toLowerCase().includes('google.com'));
+
+    if (isLink) {
+      const isUrl = location.startsWith('http') || location.includes('.');
+      if (isUrl) {
+        const url = location.startsWith('http') ? location : `https://${location}`;
+        return (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`text-indigo-400 hover:text-indigo-300 hover:underline transition-colors flex items-center gap-1 inline-flex ${className}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {location}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        );
+      }
+    }
+    return <span className={className}>{location}</span>;
+  };
+
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -236,8 +260,8 @@ export default function App() {
   };
 
   // Data Loading
-  const loadData = async () => {
-    setDataLoading(true);
+  const loadData = async (isSilent = false) => {
+    if (!isSilent) setDataLoading(true);
     try {
       if (currentUser) {
         const [loadedEvents, loadedRegs, loadedNotifs] = await Promise.all([
@@ -253,30 +277,33 @@ export default function App() {
         setEvents(loadedEvents);
       }
     } catch (e) {
-      addToast('Failed to load data', 'error');
+      if (!isSilent) addToast('Failed to load data', 'error');
     } finally {
-      setDataLoading(false);
+      if (!isSilent) setDataLoading(false);
     }
   };
 
   useEffect(() => {
-    if (currentUser) {
-      loadData();
-    }
+    loadData();
+    const interval = setInterval(() => loadData(true), 1000);
+    return () => clearInterval(interval);
   }, [currentUser]);
 
   useEffect(() => {
-    const fetchMessages = async () => {
+    const fetchMessages = async (isSilent = false) => {
       if (selectedEventForDetails) {
-        setIsMessagesLoading(true);
+        if (!isSilent) setIsMessagesLoading(true);
         const msgs = await getMessages(selectedEventForDetails.id);
         setMessages(msgs);
-        setIsMessagesLoading(false);
+        if (!isSilent) setIsMessagesLoading(false);
       } else {
         setMessages([]);
       }
     };
+
     fetchMessages();
+    const interval = setInterval(() => fetchMessages(true), 1000);
+    return () => clearInterval(interval);
   }, [selectedEventForDetails]);
 
   const addToast = (message: string, type: Toast['type'] = 'info') => {
@@ -1256,7 +1283,7 @@ export default function App() {
             </h3>
             <div className="flex items-center gap-2 text-slate-500 text-xs mb-4">
               <MapPin className="w-3.5 h-3.5 text-indigo-500/70" />
-              {event.location}
+              {renderLocation(event.location, event.locationType)}
             </div>
             <p className="text-slate-400 text-sm line-clamp-2 mb-6 flex-1 whitespace-pre-line leading-relaxed italic border-l-2 border-indigo-500/20 pl-3">{event.description}</p>
 
@@ -1413,7 +1440,7 @@ export default function App() {
                     <h3 className="text-lg font-bold text-white mt-2">{event.title}</h3>
                     <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 text-slate-400 text-sm">
                       <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(new Date(event.date), 'MMM d, yyyy')}</span>
-                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {event.location}</span>
+                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {renderLocation(event.location, event.locationType)}</span>
                       <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${event.locationType === 'online' ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-800' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                         {event.locationType === 'online' ? 'Online' : 'Offline'}
                       </span>
@@ -2671,7 +2698,9 @@ export default function App() {
                         </div>
                         <div>
                           <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Location</p>
-                          <p className="text-sm sm:text-base font-medium italic">{selectedEventForDetails.location}</p>
+                          <div className="text-sm sm:text-base font-medium italic">
+                            {renderLocation(selectedEventForDetails.location, selectedEventForDetails.locationType)}
+                          </div>
                         </div>
                       </div>
                     </div>
