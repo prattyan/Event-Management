@@ -6,6 +6,9 @@ export interface User {
   email: string;
   password?: string; // Simple mock password
   role: Role;
+  bio?: string;
+  skills?: string[];
+  phoneNumber?: string;
 }
 
 export interface CustomQuestion {

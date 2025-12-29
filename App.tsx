@@ -18,7 +18,8 @@ import {
   loginWithGoogle, saveUserProfile, resetUserPassword,
   createTeam, getTeamByInviteCode, joinTeam, getTeamsByEventId, getTeamById,
   getNotifications, addNotification, markNotificationRead,
-  getMessages, addMessage, getReviews, addReview, deleteAccount, getEventById, getEventImage, getInitialData
+  getMessages, addMessage, getReviews, addReview, deleteAccount, getEventById, getEventImage, getInitialData,
+  initRecaptcha, signInWithPhone, verifyPhoneOtp, checkPhoneNumberExists
 } from './services/storageService';
 import { generateEventDescription, getEventRecommendations } from './services/geminiService';
 import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificationService';
@@ -189,6 +190,13 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', role: 'attendee' as Role });
   const [resetEmail, setResetEmail] = useState('');
 
+  // Phone Auth State
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [showOtpInput, setShowOtpInput] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+
   const [activeTab, setActiveTab] = useState<Tab>('browse');
   const [events, setEvents] = useState<Event[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -344,7 +352,17 @@ export default function App() {
     setIsSavingProfile(true);
 
     try {
-      const updatedUser = { ...currentUser, name: profileForm.name }; // Email update usually restricted
+      if (profileForm.phoneNumber && profileForm.phoneNumber !== currentUser.phoneNumber && !profileForm.isPhoneVerified) {
+        addToast('Please verify your new phone number before saving', 'error');
+        setIsSavingProfile(false);
+        return;
+      }
+
+      const updatedUser = {
+        ...currentUser,
+        name: profileForm.name,
+        phoneNumber: profileForm.phoneNumber
+      };
       await saveUserProfile(updatedUser);
       setCurrentUser(updatedUser);
       addToast('Profile updated successfully', 'success');
@@ -1231,6 +1249,68 @@ export default function App() {
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
   };
 
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!phoneNumber) {
+      addToast('Please enter a valid phone number', 'error');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      let recaptchaContainer = null;
+      for (let i = 0; i < 10; i++) {
+        recaptchaContainer = document.getElementById('recaptcha-container');
+        if (recaptchaContainer) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      if (!recaptchaContainer) {
+        throw new Error("Recaptcha container not found");
+      }
+
+      const appVerifier = initRecaptcha('recaptcha-container');
+      const confirmationResult = await signInWithPhone(phoneNumber, appVerifier);
+      setConfirmationResult(confirmationResult);
+      setShowOtpInput(true);
+      addToast('OTP Sent!', 'success');
+    } catch (error) {
+      console.error(error);
+      addToast('Failed to send OTP. Try again.', 'error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!otp) {
+      addToast('Please enter the OTP', 'error');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const user = await verifyPhoneOtp(confirmationResult, otp);
+      if (user) {
+        setCurrentUser(user);
+        addToast('Logged in successfully!', 'success');
+        setAuthForm({ name: '', email: '', password: '', role: 'attendee' });
+        setPhoneNumber('');
+        setOtp('');
+        setShowOtpInput(false);
+        setLoginMethod('email');
+      } else {
+        addToast('Verification failed', 'error');
+      }
+    } catch (error) {
+      console.error(error);
+      addToast('Invalid OTP', 'error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   // --- Views ---
 
   if (authLoading) {
@@ -1323,7 +1403,7 @@ export default function App() {
                   </button>
                 </form>
               ) : (
-                <form onSubmit={isAuthMode === 'signin' ? handleLogin : handleSignup} className="space-y-4">
+                <div className="space-y-4">
                   {isAuthMode === 'signup' && (
                     <div>
                       <label htmlFor="signup-name" className="block text-sm font-medium text-slate-300 mb-1">Full Name</label>
@@ -1342,37 +1422,97 @@ export default function App() {
                     </div>
                   )}
 
-                  <div>
-                    <label htmlFor="auth-email" className="block text-sm font-medium text-slate-300 mb-1">Email</label>
-                    <div className="relative">
-                      <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
-                      <input
-                        id="auth-email"
-                        type="email"
-                        required
-                        placeholder="you@example.com"
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={authForm.email}
-                        onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
-                      />
+                  {isAuthMode === 'signin' && (
+                    <div className="flex bg-slate-900 rounded-lg p-1 mb-6">
+                      <button
+                        type="button"
+                        onClick={() => { setLoginMethod('email'); setShowOtpInput(false); }}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'email' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
+                      >
+                        Email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLoginMethod('phone')}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'phone' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
+                      >
+                        Phone
+                      </button>
                     </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <label htmlFor="auth-password" className="block text-sm font-medium text-slate-300 mb-1">Password</label>
-                    <div className="relative">
-                      <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
-                      <input
-                        id="auth-password"
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                        value={authForm.password}
-                        onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
-                      />
-                    </div>
-                  </div>
+                  {(loginMethod === 'email' || isAuthMode === 'signup') ? (
+                    <>
+                      <div>
+                        <label htmlFor="auth-email" className="block text-sm font-medium text-slate-300 mb-1">Email</label>
+                        <div className="relative">
+                          <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
+                          <input
+                            id="auth-email"
+                            type="email"
+                            required
+                            placeholder="you@example.com"
+                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            value={authForm.email}
+                            onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="auth-password" className="block text-sm font-medium text-slate-300 mb-1">Password</label>
+                        <div className="relative">
+                          <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
+                          <input
+                            id="auth-password"
+                            type="password"
+                            required
+                            placeholder="••••••••"
+                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            value={authForm.password}
+                            onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {!showOtpInput ? (
+                        <div>
+                          <label htmlFor="auth-phone" className="block text-sm font-medium text-slate-300 mb-1">Phone Number</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-500 text-sm">📞</span>
+                            <input
+                              id="auth-phone"
+                              type="tel"
+                              required
+                              placeholder="+1 555 123 4567"
+                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                              value={phoneNumber}
+                              onChange={e => setPhoneNumber(e.target.value)}
+                            />
+                          </div>
+                          <div id="recaptcha-container" className="mt-4"></div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label htmlFor="auth-otp" className="block text-sm font-medium text-slate-300 mb-1">Enter OTP</label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-500 text-sm">🔒</span>
+                            <input
+                              id="auth-otp"
+                              type="text"
+                              required
+                              placeholder="123456"
+                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none tracking-widest text-center"
+                              value={otp}
+                              onChange={e => setOtp(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   {isAuthMode === 'signup' && (
                     <div>
@@ -1403,14 +1543,29 @@ export default function App() {
                   )}
 
                   <button
-                    type="submit"
+                    type="button"
                     disabled={authLoading}
+                    onClick={(e) => {
+                      if (isAuthMode === 'signup') {
+                        handleSignup(e);
+                      } else if (loginMethod === 'phone') {
+                        showOtpInput ? handleVerifyOtp(e) : handleSendOtp(e);
+                      } else {
+                        handleLogin(e);
+                      }
+                    }}
                     className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
                   >
-                    {authLoading ? 'Please wait...' : (isAuthMode === 'signin' ? 'Sign In' : 'Create Account')}
+                    {authLoading ? 'Please wait...' : (
+                      isAuthMode === 'signup'
+                        ? 'Create Account'
+                        : (loginMethod === 'phone'
+                          ? (showOtpInput ? 'Verify OTP' : 'Send OTP')
+                          : 'Sign In')
+                    )}
                   </button>
 
-                  {isAuthMode === 'signin' && (
+                  {isAuthMode === 'signin' && loginMethod === 'email' && (
                     <div className="flex justify-end mt-1">
                       <button
                         type="button"
@@ -1421,8 +1576,7 @@ export default function App() {
                       </button>
                     </div>
                   )}
-                </form>
-
+                </div>
               )}
 
               {isAuthMode !== 'forgot-password' && (
@@ -1499,7 +1653,7 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
+      </div >
     );
   }
 
@@ -1651,7 +1805,15 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => {
-                      setProfileForm({ name: currentUser.name, email: currentUser.email });
+                      setProfileForm({
+                        name: currentUser.name,
+                        email: currentUser.email,
+                        phoneNumber: currentUser.phoneNumber || '',
+                        isPhoneVerified: !!currentUser.phoneNumber
+                      });
+                      setOtp('');
+                      setShowOtpInput(false);
+                      setConfirmationResult(null);
                       setIsProfileModalOpen(true);
                       setIsProfileMenuOpen(false);
                     }}
@@ -3087,6 +3249,99 @@ export default function App() {
                     title="Contact support to change email"
                   />
                   <p className="text-xs text-slate-400 mt-1">Email cannot be changed directly.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Phone Number</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      value={profileForm.phoneNumber || ''}
+                      onChange={e => setProfileForm({ ...profileForm, phoneNumber: e.target.value, isPhoneVerified: false })}
+                      placeholder="+1234567890"
+                    />
+                    {!profileForm.isPhoneVerified && profileForm.phoneNumber && (
+                      <button
+                        type="button"
+                        disabled={authLoading}
+                        onClick={async () => {
+                          if (authLoading) return;
+                          if (!profileForm.phoneNumber) return;
+                          const exists = await checkPhoneNumberExists(profileForm.phoneNumber);
+                          if (exists) {
+                            addToast('Phone number already in use by another account', 'error');
+                            return;
+                          }
+
+                          if (!profileForm.phoneNumber.startsWith('+')) {
+                            addToast('Please include country code (e.g., +1 for US)', 'error');
+                            return;
+                          }
+
+                          setAuthLoading(true);
+                          try {
+                            // Robust check for container with retries
+                            let recaptchaContainer = null;
+                            for (let i = 0; i < 10; i++) {
+                              recaptchaContainer = document.getElementById('profile-recaptcha');
+                              if (recaptchaContainer) break;
+                              await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+
+                            if (!recaptchaContainer) {
+                              throw new Error("Recaptcha container not found. Please try again.");
+                            }
+
+                            const appVerifier = initRecaptcha('profile-recaptcha');
+                            const confirmation = await signInWithPhone(profileForm.phoneNumber, appVerifier);
+                            setConfirmationResult(confirmation);
+                            setShowOtpInput(true);
+                            addToast('OTP Sent', 'success');
+                          } catch (e: any) {
+                            console.error(e);
+                            addToast(`Failed to send OTP: ${e.message}`, 'error');
+                          } finally {
+                            setAuthLoading(false);
+                          }
+                        }}
+                        className="px-3 py-2 bg-indigo-600 rounded-lg text-white text-xs font-semibold hover:bg-indigo-700"
+                      >
+                        Verify
+                      </button>
+                    )}
+                    {profileForm.isPhoneVerified && <CheckCircle className="w-6 h-6 text-green-500 mt-2" />}
+                  </div>
+                  <div id="profile-recaptcha" className="mt-2"></div>
+
+                  {showOtpInput && !profileForm.isPhoneVerified && (
+                    <div className="mt-2 flex gap-2 animate-in fade-in">
+                      <input
+                        type="text"
+                        className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none tracking-widest text-center"
+                        placeholder="OTP"
+                        value={otp}
+                        onChange={e => setOtp(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await confirmationResult.confirm(otp);
+                            setProfileForm(prev => ({ ...prev, isPhoneVerified: true }));
+                            setShowOtpInput(false);
+                            setOtp('');
+                            addToast('Phone number verified!', 'success');
+                          } catch (e) {
+                            addToast('Invalid OTP', 'error');
+                          }
+                        }}
+                        className="px-4 py-2 bg-green-600 rounded-lg text-white text-xs font-semibold hover:bg-green-700"
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 flex gap-3">

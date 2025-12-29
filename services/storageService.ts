@@ -5,7 +5,11 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
   signInWithPopup,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
+  ApplicationVerifier
 } from "firebase/auth";
 import {
   getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, where, getDoc, setDoc, limit
@@ -847,15 +851,86 @@ export const loginUser = async (email: string, password: string): Promise<User |
   } else {
     const stored = localStorage.getItem(STORAGE_KEYS.USERS);
     const users: User[] = stored ? JSON.parse(stored) : [];
-    user = users.find(u => u.email === email && u.password === password) || null;
+    user = users.find(u => u.email === email && (u as any).password === password) || null;
   }
 
   if (user) {
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
   }
-
   return user;
 };
+
+// --- Phone Auth Helpers ---
+
+export const initRecaptcha = (elementOrId: string | HTMLElement): ApplicationVerifier => {
+  if (!USE_FIREBASE_AUTH) throw new Error("Firebase not configured");
+
+  // Clear any existing verifier instance globally
+  if ((window as any).recaptchaVerifier) {
+    try {
+      (window as any).recaptchaVerifier.clear();
+    } catch (e) {
+      // Ignore errors during clearing
+    }
+    (window as any).recaptchaVerifier = null;
+  }
+
+  // Manually clear the container's content to remove any stale grecaptcha iframes or elements
+  try {
+    const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+    if (el) {
+      el.innerHTML = '';
+    }
+  } catch (e) { }
+
+  const verifier = new RecaptchaVerifier(auth, elementOrId, {
+    'size': 'invisible',
+    'callback': (response: any) => {
+      console.log("Recaptcha verified", response);
+    },
+    'expired-callback': () => {
+      console.log("Recaptcha expired");
+      if ((window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier.clear();
+        (window as any).recaptchaVerifier = null;
+      }
+    }
+  });
+
+  (window as any).recaptchaVerifier = verifier;
+  return verifier;
+}
+
+export const signInWithPhone = async (phoneNumber: string, appVerifier: ApplicationVerifier): Promise<ConfirmationResult> => {
+  return await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+}
+
+export const verifyPhoneOtp = async (confirmationResult: ConfirmationResult, otp: string): Promise<User | null> => {
+  try {
+    const result = await confirmationResult.confirm(otp);
+    const user = result.user;
+
+    // Check if user profile exists, if not create one?
+    let profile = await getUserProfile(user.uid);
+    if (!profile) {
+      // Create a skeleton profile for phone user
+      profile = {
+        id: user.uid,
+        name: `User ${user.phoneNumber?.slice(-4)}`,
+        email: user.phoneNumber || '', // Use phone as identifier
+        role: 'attendee', // Default role
+        skills: [],
+        bio: ''
+      };
+      await saveUserProfile(profile);
+    }
+    return profile;
+  } catch (e) {
+    console.error("OTP Verification failed", e);
+    throw e;
+  }
+}
+
 
 export const loginWithGoogle = async (role: 'attendee' | 'organizer'): Promise<User | null> => {
   if (!USE_FIREBASE_AUTH) {
@@ -933,6 +1008,26 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
   }
 
   return () => { };
+};
+
+export const checkPhoneNumberExists = async (phoneNumber: string): Promise<boolean> => {
+  if (USE_MONGO) {
+    try {
+      const result = await mongoRequest('findOne', 'users', { filter: { phoneNumber } });
+      return !!result.document;
+    } catch (e) {
+      console.error("Mongo check phone failed", e);
+      return false;
+    }
+  }
+
+  if (USE_FIREBASE_STORAGE) {
+    const q = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
+    const snap = await getDocs(q);
+    return !snap.empty;
+  }
+
+  return false; // Local storage simplified ignored
 };
 
 export const resetUserPassword = async (email: string): Promise<{ success: boolean; message: string }> => {
