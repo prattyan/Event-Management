@@ -191,11 +191,28 @@ export const getEventImage = async (id: string): Promise<string | null> => {
   return null;
 };
 
-export const getEventById = async (id: string): Promise<Event | null> => {
+const eventCache: Record<string, Event> = {};
+
+export const getEventById = async (id: string, options?: { excludeImage?: boolean }): Promise<Event | null> => {
   if (USE_MONGO) {
+    if (eventCache[id] && !options?.excludeImage) {
+      // Return cached full event if available
+      return eventCache[id];
+    }
+
     try {
-      const result = await mongoRequest('findOne', 'events', { filter: { id: id } });
-      return result.document ? { ...result.document, id: result.document.id || result.document._id } : null;
+      const projection = options?.excludeImage ? { imageUrl: 0 } : {};
+      const result = await mongoRequest('findOne', 'events', {
+        filter: { id: id },
+        projection: projection
+      });
+
+      const evt = result.document ? { ...result.document, id: result.document.id || result.document._id } : null;
+
+      if (evt && !options?.excludeImage) {
+        eventCache[id] = evt;
+      }
+      return evt;
     } catch (e) {
       console.error("Mongo fetch event details failed", e);
       return null;

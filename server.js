@@ -228,6 +228,36 @@ app.post('/api/action/:action', async (req, res) => {
                 res.json(result);
                 break;
 
+            case 'fetchBatch':
+                const { requests } = req.body;
+                if (!Array.isArray(requests)) {
+                    return res.status(400).json({ error: "requests must be an array" });
+                }
+
+                // Execute all requests in parallel
+                const results = await Promise.all(requests.map(async (reqItem) => {
+                    const subCol = db.collection(reqItem.collection);
+                    if (reqItem.action === 'find') {
+                        const subQuery = reqItem.filter || {};
+                        const subOptions = {};
+                        if (reqItem.limit) subOptions.limit = parseInt(reqItem.limit);
+                        if (reqItem.projection) subOptions.projection = reqItem.projection;
+                        if (reqItem.sort) subOptions.sort = reqItem.sort;
+
+                        const docs = await subCol.find(subQuery, subOptions).toArray();
+                        return { documents: docs };
+                    } else if (reqItem.action === 'findOne') {
+                        const subOptions = {};
+                        if (reqItem.projection) subOptions.projection = reqItem.projection;
+                        const doc = await subCol.findOne(reqItem.filter || {}, subOptions);
+                        return { document: doc };
+                    }
+                    return { error: "Unsupported batch action" };
+                }));
+
+                res.json({ results });
+                break;
+
             default:
                 res.status(400).json({ error: "Unknown action" });
         }

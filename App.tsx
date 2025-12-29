@@ -422,19 +422,27 @@ export default function App() {
         // We can check a flag or just always fetch if we are in Mongo mode.
         // For simplicity, let's always fetch fresh details to ensure up-to-date data too.
         try {
-          const fullEvent = await getEventById(selectedEventForDetails.id);
+          // Optimization: Fetch details WITHOUT massive image first to unlock UI speed.
+          // The LazyEventImage component will fetch the image in parallel.
+          const fullEvent = await getEventById(selectedEventForDetails.id, { excludeImage: true });
+
           if (fullEvent) {
-            // Only update if it's different to avoid loops? 
-            // React state update only re-renders if reference changes. 
-            // We need to avoid infinite loop. Check if description length changed significantly?
-            if (fullEvent.description.length > selectedEventForDetails.description.length || (fullEvent.imageUrl && !selectedEventForDetails.imageUrl)) {
-              setSelectedEventForDetails(fullEvent);
+            // Merge the fetched details (text) with the existing state (which might have empty image)
+            // We preserved the 'imageUrl' from list view (empty) or if we had it cached.
+            // But getEventById(excludeImage: true) returns null/undefined for imageUrl.
+
+            // If we really want to update the state, we should check if description is missing.
+            if (fullEvent.description.length > selectedEventForDetails.description.length) {
+              // Keep existing image URL if we have one (though usually empty from list)
+              // The LazyEventImage will handle the fetch.
+              setSelectedEventForDetails(prev => prev ? { ...fullEvent, imageUrl: prev.imageUrl } : fullEvent);
             }
           }
         } catch (e) {
           console.error("Failed to hydrate event", e);
         }
       }
+
     };
     hydrateEvent();
   }, [selectedEventForDetails?.id]); // Only run if ID changes
@@ -1118,6 +1126,21 @@ export default function App() {
   };
 
   const handleManualAttendance = async (regId: string) => {
+    // Security Check: Verify Organizer Ownership or Collaborative Rights
+    const reg = registrations.find(r => r.id === regId);
+    if (reg) {
+      const event = events.find(e => e.id === reg.eventId);
+      if (event) {
+        const isOrganizer = currentUser?.role === 'organizer' && event.organizerId === currentUser?.id;
+        const isCollaborator = event.collaboratorEmails?.includes(currentUser?.email || '');
+
+        if (!isOrganizer && !isCollaborator) {
+          addToast('Permission Denied: Only the event organizer or co-organizers can mark attendance.', 'error');
+          return;
+        }
+      }
+    }
+
     if (!confirm('Mark this participant as present?')) return;
 
     const success = await markAttendance(regId);
@@ -1135,18 +1158,36 @@ export default function App() {
       const payload = JSON.parse(data);
       if (!payload.id) throw new Error('Invalid QR Code');
 
+      // Security Check: Verify Organizer Ownership or Collaborative Rights
+      const reg = registrations.find(r => r.id === payload.id);
+      if (!reg) {
+        addToast('Ticket not recognized.', 'error');
+        return;
+      }
+
+      const event = events.find(e => e.id === reg.eventId);
+      if (!event) {
+        addToast('Event associated with this ticket not found.', 'error');
+        return;
+      }
+
+      const isOrganizer = currentUser?.role === 'organizer' && event.organizerId === currentUser?.id;
+      const isCollaborator = event.collaboratorEmails?.includes(currentUser?.email || '');
+
+      if (!isOrganizer && !isCollaborator) {
+        addToast('Permission Denied: Only the event organizer or co-organizers can scan this ticket.', 'error');
+        return;
+      }
+
       const success = await markAttendance(payload.id);
 
       if (success) {
         addToast('Attendance Marked Successfully!', 'success');
         await loadData(); // refresh UI
       } else {
-        // We need to find the reg to give specific error
-        // Note: registrations state might be slightly stale if not reloaded, but good enough for error msg
-        const reg = registrations.find(r => r.id === payload.id);
-        if (reg && reg.status !== RegistrationStatus.APPROVED) {
+        if (reg.status !== RegistrationStatus.APPROVED) {
           addToast('Participant is not approved yet!', 'error');
-        } else if (reg && reg.attended) {
+        } else if (reg.attended) {
           addToast('Already marked as attended.', 'info');
         } else {
           addToast('Invalid Ticket or Participant not found', 'error');
@@ -3340,7 +3381,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-slate-900 w-full h-full sm:h-auto sm:max-w-2xl sm:rounded-3xl shadow-2xl border-none sm:border sm:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col">
             <div className="relative h-56 sm:h-64 flex-shrink-0">
-              <img src={selectedEventForDetails.imageUrl} alt={selectedEventForDetails.title} className="w-full h-full object-cover" />
+              <LazyEventImage eventId={selectedEventForDetails.id} initialSrc={selectedEventForDetails.imageUrl} alt={selectedEventForDetails.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-black/20"></div>
               <button
                 onClick={() => setSelectedEventForDetails(null)}
