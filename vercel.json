@@ -2,7 +2,15 @@
     "version": 2,
     "rewrites": [
         {
-            "source": "/((?!api/).*)",
+            "source": "/api/action/:action",
+            "destination": "/api/action/[action].js"
+        },
+        {
+            "source": "/api/:path*",
+            "destination": "/api/:path*"
+        },
+        {
+            "source": "/((?!api/|assets/|favicon.ico|manifest.json|[\\w-]+\\.\\w+).*)",
             "destination": "/index.html"
         }
     ]
