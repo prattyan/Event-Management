@@ -83,25 +83,23 @@ export const getInitialData = async (userId?: string) => {
           action: 'find',
           filter: {},
           limit: 12,
-          projection: { imageUrl: 0, description: 0 }
+          projection: { imageUrl: 0, description: 0 },
+          sort: { date: -1 } // Added to satisfy TS type inference for later push
         },
         // 2. Registrations
         {
           collection: 'registrations',
           action: 'find',
-          filter: {}, // We fetch all for now as per original logic, though this ideally should be filtered
-        }
-      ];
-
-      // 3. Notifications (only if user logged in)
-      if (userId) {
-        requests.push({
+          filter: {},
+        },
+        // 3. Notifications (Requested always, even for guests)
+        {
           collection: 'notifications',
           action: 'find',
-          filter: { userId: userId },
-          sort: { date: -1 }
-        });
-      }
+          filter: { userId: userId || "" },
+          sort: { createdAt: -1 }
+        }
+      ];
 
       const response = await mongoRequest('fetchBatch', '', { requests });
 
@@ -118,9 +116,10 @@ export const getInitialData = async (userId?: string) => {
           id: doc.id || doc._id
         }));
 
-        const notifications = userId && response.results[2]
-          ? (response.results[2].documents || []).map((doc: any) => ({ ...doc, id: doc.id || doc._id }))
-          : [];
+        const notifications = (response.results[2]?.documents || []).map((doc: any) => ({
+          ...doc,
+          id: doc.id || doc._id
+        }));
 
         return { events, registrations, notifications };
       }
@@ -739,6 +738,15 @@ const getUserProfile = async (uid: string): Promise<User | null> => {
 
 // Save user profile
 export const saveUserProfile = async (user: User): Promise<void> => {
+  // Always update current user in local storage if this is the user currently logged in
+  const storedCurrent = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+  if (storedCurrent) {
+    const current = JSON.parse(storedCurrent);
+    if (current.id === user.id) {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+    }
+  }
+
   if (USE_MONGO) {
     try {
       // Check if exists first to avoid duplicates if using simplistic insert
@@ -755,7 +763,7 @@ export const saveUserProfile = async (user: User): Promise<void> => {
           update: { $set: updateData }
         });
       }
-      return;
+      // Continue to local storage as fallback/redundancy
     } catch (e) {
       console.error("Mongo save user failed", e);
     }
@@ -764,7 +772,6 @@ export const saveUserProfile = async (user: User): Promise<void> => {
   if (USE_FIREBASE_STORAGE) {
     try {
       await setDoc(doc(db, "users", user.id), user);
-      return;
     } catch (e) {
       console.error("Firebase saveUserProfile failed:", e);
     }
@@ -829,7 +836,11 @@ export const loginUser = async (email: string, password: string): Promise<User |
   if (USE_FIREBASE_AUTH) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      return await getUserProfile(userCredential.user.uid);
+      const profile = await getUserProfile(userCredential.user.uid);
+      if (profile) {
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(profile));
+      }
+      return profile;
     } catch (error) {
       console.error("Firebase Login error:", error);
       return null;
@@ -865,40 +876,47 @@ export const loginUser = async (email: string, password: string): Promise<User |
 export const initRecaptcha = (elementOrId: string | HTMLElement): ApplicationVerifier => {
   if (!USE_FIREBASE_AUTH) throw new Error("Firebase not configured");
 
-  // Clear any existing verifier instance globally
+  // Nuke any global state that might be stale
   if ((window as any).recaptchaVerifier) {
     try {
       (window as any).recaptchaVerifier.clear();
     } catch (e) {
-      // Ignore errors during clearing
+      console.warn("Soft reset for stale verifier");
     }
     (window as any).recaptchaVerifier = null;
   }
 
-  // Manually clear the container's content to remove any stale grecaptcha iframes or elements
+  // Ensure the element is clean
+  const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
+  if (el) {
+    el.innerHTML = '';
+  }
+
   try {
-    const el = typeof elementOrId === 'string' ? document.getElementById(elementOrId) : elementOrId;
-    if (el) {
-      el.innerHTML = '';
-    }
-  } catch (e) { }
-
-  const verifier = new RecaptchaVerifier(auth, elementOrId, {
-    'size': 'invisible',
-    'callback': (response: any) => {
-      console.log("Recaptcha verified", response);
-    },
-    'expired-callback': () => {
-      console.log("Recaptcha expired");
-      if ((window as any).recaptchaVerifier) {
-        (window as any).recaptchaVerifier.clear();
-        (window as any).recaptchaVerifier = null;
+    const verifier = new RecaptchaVerifier(auth, elementOrId, {
+      'size': 'invisible',
+      'callback': () => {
+        // Verification success
+      },
+      'expired-callback': () => {
+        // Reset on expiry
+        if ((window as any).recaptchaVerifier) {
+          (window as any).recaptchaVerifier.clear();
+          (window as any).recaptchaVerifier = null;
+        }
       }
-    }
-  });
+    });
 
-  (window as any).recaptchaVerifier = verifier;
-  return verifier;
+    (window as any).recaptchaVerifier = verifier;
+    return verifier;
+  } catch (err: any) {
+    console.error("Recaptcha Init Error:", err);
+    // If it fails because of 'already rendered', we ignore and try to return global
+    if (err.message?.includes('already rendered') && (window as any).recaptchaVerifier) {
+      return (window as any).recaptchaVerifier;
+    }
+    throw err;
+  }
 }
 
 export const signInWithPhone = async (phoneNumber: string, appVerifier: ApplicationVerifier): Promise<ConfirmationResult> => {
@@ -909,21 +927,44 @@ export const verifyPhoneOtp = async (confirmationResult: ConfirmationResult, otp
   try {
     const result = await confirmationResult.confirm(otp);
     const user = result.user;
+    const phoneNumber = user.phoneNumber;
 
-    // Check if user profile exists, if not create one?
-    let profile = await getUserProfile(user.uid);
+    // First try: Find user by phone number (in case they signed up with email first)
+    let profile = null;
+    if (phoneNumber) {
+      if (USE_MONGO) {
+        const res = await mongoRequest('findOne', 'users', { filter: { phoneNumber } });
+        profile = res.document || null;
+      } else if (USE_FIREBASE_STORAGE) {
+        const q = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
+        const snap = await getDocs(q);
+        profile = !snap.empty ? (snap.docs[0].data() as User) : null;
+      }
+    }
+
+    // Second try: Find by Firebase UID
+    if (!profile) {
+      profile = await getUserProfile(user.uid);
+    }
+
     if (!profile) {
       // Create a skeleton profile for phone user
       profile = {
         id: user.uid,
         name: `User ${user.phoneNumber?.slice(-4)}`,
         email: user.phoneNumber || '', // Use phone as identifier
+        phoneNumber: user.phoneNumber || '',
         role: 'attendee', // Default role
         skills: [],
         bio: ''
       };
       await saveUserProfile(profile);
+    } else if (profile && !profile.phoneNumber && phoneNumber) {
+      // If profile exists but phone wasn't set (unlikely if logic is right, but safe to sync)
+      profile.phoneNumber = phoneNumber;
+      await saveUserProfile(profile);
     }
+
     return profile;
   } catch (e) {
     console.error("OTP Verification failed", e);
@@ -979,8 +1020,26 @@ export const subscribeToAuth = (callback: (user: User | null) => void) => {
     return onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userProfile = await getUserProfile(firebaseUser.uid);
-        callback(userProfile);
+        if (userProfile) {
+          localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(userProfile));
+          callback(userProfile);
+        } else {
+          // Check local storage as last resort
+          const stored = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+          if (stored) {
+            callback(JSON.parse(stored));
+          } else {
+            // Basic user info if no profile found yet
+            callback({
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              name: firebaseUser.displayName || 'User',
+              role: 'attendee'
+            });
+          }
+        }
       } else {
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
         callback(null);
       }
     });
@@ -1320,6 +1379,8 @@ export const deleteAccount = async (userId: string, isOrganizer: boolean): Promi
           await mongoRequest('deleteMany', 'messages', { filter: { eventId: event.id } });
           // Delete reviews for this event
           await mongoRequest('deleteMany', 'reviews', { filter: { eventId: event.id } });
+          // Delete teams for this event
+          await mongoRequest('deleteMany', 'teams', { filter: { eventId: event.id } });
         }
 
         // Finally delete the events
@@ -1388,6 +1449,11 @@ export const deleteAccount = async (userId: string, isOrganizer: boolean): Promi
           const eRevQ = query(collection(db, "reviews"), where("eventId", "==", eventId));
           const eRevSnap = await getDocs(eRevQ);
           eRevSnap.forEach(async (d) => await deleteDoc(d.ref));
+
+          // Delete teams
+          const eTeamQ = query(collection(db, "teams"), where("eventId", "==", eventId));
+          const eTeamSnap = await getDocs(eTeamQ);
+          eTeamSnap.forEach(async (d) => await deleteDoc(d.ref));
 
           // Delete event
           await deleteDoc(eventDoc.ref);

@@ -82,7 +82,7 @@ export type Tab = 'browse' | 'my-tickets' | 'organizer';
 export interface Toast {
   id: string;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
 }
 
 export interface Notification {

@@ -36,11 +36,14 @@ const ToastContainer = ({ toasts }: { toasts: Toast[] }) => (
         key={t.id}
         className={`pointer-events-auto shadow-2xl rounded-lg px-6 py-4 text-base font-medium flex items-center justify-center gap-3 transform transition-all duration-300 animate-in fade-in zoom-in-95
           ${t.type === 'success' ? 'bg-green-600 text-white' :
-            t.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
+            t.type === 'error' ? 'bg-red-600 text-white' :
+              t.type === 'warning' ? 'bg-amber-600 text-white' :
+                'bg-blue-600 text-white'
           } `}
       >
         {t.type === 'success' && <CheckCircle className="w-5 h-5 flex-shrink-0" />}
         {t.type === 'error' && <XCircle className="w-5 h-5 flex-shrink-0" />}
+        {t.type === 'warning' && <ScanLine className="w-5 h-5 flex-shrink-0" />}
         <span className="break-words text-center">{t.message}</span>
       </div>
     ))}
@@ -207,6 +210,8 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [otpPurpose, setOtpPurpose] = useState<'login' | 'profile' | 'deletion'>('login');
 
   const renderLocation = (location: string, type: 'online' | 'offline', className?: string) => {
     const isLink = type === 'online' && (location.startsWith('http') || location.includes('.') || location.toLowerCase().includes('zoom') || location.toLowerCase().includes('google.com'));
@@ -365,13 +370,53 @@ export default function App() {
       };
       await saveUserProfile(updatedUser);
       setCurrentUser(updatedUser);
-      addToast('Profile updated successfully', 'success');
-      setIsProfileModalOpen(false);
+      addToast('Profile updated', 'success');
+      loadData();
     } catch (error) {
       console.error(error);
       addToast('Failed to update profile', 'error');
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const handleSendDeleteOtp = async () => {
+    if (!currentUser?.phoneNumber) return;
+    setAuthLoading(true);
+    try {
+      const appVerifier = initRecaptcha('persistent-profile-recaptcha');
+      const confirmation = await signInWithPhone(currentUser.phoneNumber, appVerifier);
+      setConfirmationResult(confirmation);
+      setOtpPurpose('deletion');
+      setShowOtpInput(true);
+      addToast('OTP Sent for account deletion', 'info');
+    } catch (e: any) {
+      console.error(e);
+      addToast(`Failed to send OTP: ${e.message}`, 'error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleConfirmDeletion = async () => {
+    if (!currentUser || !otp) return;
+    setAuthLoading(true);
+    try {
+      await confirmationResult.confirm(otp);
+      const success = await deleteAccount(currentUser.id, currentUser.role === 'organizer');
+      if (success) {
+        addToast('Account deleted permanently', 'success');
+        setCurrentUser(null);
+        setIsProfileModalOpen(false);
+      } else {
+        addToast('Failed to delete some account data', 'error');
+      }
+    } catch (e) {
+      addToast('Invalid OTP', 'error');
+    } finally {
+      setAuthLoading(false);
+      setShowOtpInput(false);
+      setOtp('');
     }
   };
 
@@ -384,11 +429,11 @@ export default function App() {
       const regs = initialData.registrations || [];
       const notifs = initialData.notifications || [];
 
-      if (currentUser) {
-        setEvents(evts);
-        setRegistrations(regs);
-        setNotifications(notifs);
+      setEvents(evts);
+      setRegistrations(regs);
+      setNotifications(notifs);
 
+      if (currentUser) {
         // Fetch teams for events user is registered for AND events they organize (if organizer)
         const userEventIds = regs.filter(r => r.participantEmail === currentUser.email).map(r => r.eventId);
         const organizedEventIds = currentUser.role === 'organizer' ? evts.filter(e => e.organizerId === currentUser.id).map(e => e.id) : [];
@@ -398,8 +443,6 @@ export default function App() {
           const allTeams = await Promise.all(allEventIdsToFetchTeams.map(id => getTeamsByEventId(id)));
           setTeams(allTeams.flat());
         }
-      } else {
-        setEvents(evts);
       }
     } catch (e) {
       if (!isSilent) addToast('Failed to load data', 'error');
@@ -1258,20 +1301,10 @@ export default function App() {
 
     setAuthLoading(true);
     try {
-      let recaptchaContainer = null;
-      for (let i = 0; i < 10; i++) {
-        recaptchaContainer = document.getElementById('recaptcha-container');
-        if (recaptchaContainer) break;
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      if (!recaptchaContainer) {
-        throw new Error("Recaptcha container not found");
-      }
-
-      const appVerifier = initRecaptcha('recaptcha-container');
+      const appVerifier = initRecaptcha('persistent-recaptcha-container');
       const confirmationResult = await signInWithPhone(phoneNumber, appVerifier);
       setConfirmationResult(confirmationResult);
+      setOtpPurpose('login');
       setShowOtpInput(true);
       addToast('OTP Sent!', 'success');
     } catch (error) {
@@ -1321,11 +1354,19 @@ export default function App() {
     );
   }
 
-  if (!currentUser) {
+  const renderAuthModal = () => {
+    if (!isAuthModalOpen && currentUser) return null;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
-        <ToastContainer toasts={toasts} />
-        <div className="bg-slate-900 rounded-2xl shadow-xl overflow-hidden max-w-4xl w-full flex flex-col md:flex-row border border-slate-800">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm overflow-y-auto">
+        <div className="bg-slate-900 rounded-2xl shadow-xl overflow-hidden max-w-4xl w-full flex flex-col md:flex-row border border-slate-800 relative">
+          {!currentUser && (
+            <button
+              onClick={() => setIsAuthModalOpen(false)}
+              className="absolute top-4 right-4 z-20 p-2 text-slate-400 hover:text-white"
+            >
+              <XCircle className="w-6 h-6" />
+            </button>
+          )}
           <div className="bg-indigo-600 p-8 md:w-1/2 flex flex-col justify-center text-white relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80')] bg-cover opacity-20"></div>
             <div className="relative z-10">
@@ -1492,7 +1533,6 @@ export default function App() {
                               onChange={e => setPhoneNumber(e.target.value)}
                             />
                           </div>
-                          <div id="recaptcha-container" className="mt-4"></div>
                         </div>
                       ) : (
                         <div>
@@ -1655,7 +1695,7 @@ export default function App() {
         </div>
       </div >
     );
-  }
+  };
 
   // --- Authenticated Views ---
 
@@ -1671,42 +1711,32 @@ export default function App() {
           </span>
         </div>
 
-        <nav className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-xl overflow-x-auto no-scrollbar max-w-[180px] xs:max-w-none">
-          {currentUser.role === 'attendee' && (
-            <>
-              <button
-                onClick={() => setActiveTab('browse')}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'browse' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-              >
-                Browse
-              </button>
-              <button
-                onClick={() => setActiveTab('my-tickets')}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'my-tickets' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-              >
-                Tickets
-              </button>
-            </>
-          )}
+        <nav className="hidden md:flex items-center gap-1 sm:gap-2">
+          <button
+            onClick={() => setActiveTab('browse')}
+            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'browse' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'}`}
+          >
+            Browse
+          </button>
 
-          {currentUser.role === 'organizer' && (
+          {currentUser && (
             <>
-              <button
-                onClick={() => setActiveTab('organizer')}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'organizer' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-              >
-                Dashboard
-              </button>
-              <button
-                onClick={() => setActiveTab('browse')}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'browse' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-              >
-                Events
-              </button>
+              {currentUser.role === 'organizer' && (
+                <button
+                  onClick={() => setActiveTab('organizer')}
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'organizer' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Dashboard
+                </button>
+              )}
+              {currentUser.role === 'attendee' && (
+                <button
+                  onClick={() => setActiveTab('my-tickets')}
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'my-tickets' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                >
+                  My Tickets
+                </button>
+              )}
             </>
           )}
         </nav>
@@ -1780,67 +1810,79 @@ export default function App() {
             )}
           </div>
 
-          <div className="hidden md:flex flex-col items-end">
-            <span className="text-sm font-medium text-slate-200">{currentUser.name}</span>
-            <span className="text-xs text-slate-400 capitalize">{currentUser.role}</span>
-          </div>
-          <div className="relative">
-            <button
-              onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-              className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <Menu className="w-6 h-6" />
-            </button>
+          {currentUser ? (
+            <>
+              <div className="hidden md:flex flex-col items-end">
+                <span className="text-sm font-medium text-slate-200">{currentUser.name}</span>
+                <span className="text-xs text-slate-400 capitalize">{currentUser.role}</span>
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                  className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <Menu className="w-6 h-6" />
+                </button>
 
-            {isProfileMenuOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10 cursor-default"
-                  onClick={() => setIsProfileMenuOpen(false)}
-                ></div>
-                <div className="absolute right-0 mt-2 w-48 bg-slate-800 rounded-xl shadow-xl border border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 origin-top-right">
-                  <div className="px-4 py-3 border-b border-slate-700 md:hidden">
-                    <p className="text-sm font-semibold text-slate-200">{currentUser.name}</p>
-                    <p className="text-xs text-slate-400 truncate">{currentUser.email}</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setProfileForm({
-                        name: currentUser.name,
-                        email: currentUser.email,
-                        phoneNumber: currentUser.phoneNumber || '',
-                        isPhoneVerified: !!currentUser.phoneNumber
-                      });
-                      setOtp('');
-                      setShowOtpInput(false);
-                      setConfirmationResult(null);
-                      setIsProfileModalOpen(true);
-                      setIsProfileMenuOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-indigo-400 flex items-center gap-2"
-                  >
-                    <UserCircle className="w-4 h-4" /> Edit Profile
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleLogout();
-                      setIsProfileMenuOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-700 flex items-center gap-2"
-                  >
-                    <LogOut className="w-4 h-4" /> Sign Out
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                {isProfileMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10 cursor-default"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                    ></div>
+                    <div className="absolute right-0 mt-2 w-48 bg-slate-800 rounded-xl shadow-xl border border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 origin-top-right">
+                      <div className="px-4 py-3 border-b border-slate-700 md:hidden">
+                        <p className="text-sm font-semibold text-slate-200">{currentUser.name}</p>
+                        <p className="text-xs text-slate-400 truncate">{currentUser.email}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setProfileForm({
+                            name: currentUser.name,
+                            email: currentUser.email,
+                            phoneNumber: currentUser.phoneNumber || '',
+                            isPhoneVerified: !!currentUser.phoneNumber
+                          });
+                          setOtp('');
+                          setOtpPurpose('profile');
+                          setShowOtpInput(false);
+                          setConfirmationResult(null);
+                          setIsProfileModalOpen(true);
+                          setIsProfileMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-indigo-400 flex items-center gap-2"
+                      >
+                        <UserCircle className="w-4 h-4" /> Edit Profile
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleLogout();
+                          setIsProfileMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-700 flex items-center gap-2"
+                      >
+                        <LogOut className="w-4 h-4" /> Sign Out
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <button
+              onClick={() => setIsAuthModalOpen(true)}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+            >
+              Sign In
+            </button>
+          )}
         </div>
       </div>
     </header>
   );
 
   const renderEvents = () => {
-    const visibleEvents = currentUser.role === 'organizer'
+    const visibleEvents = currentUser?.role === 'organizer'
       ? events.filter(e => e.organizerId === currentUser.id)
       : events;
 
@@ -1887,9 +1929,9 @@ export default function App() {
             </div>
             <p className="text-slate-400 text-sm line-clamp-2 mb-6 flex-1 whitespace-pre-line leading-relaxed italic border-l-2 border-indigo-500/20 pl-3">{event.description}</p>
 
-            {currentUser.role === 'attendee' && (
+            {(!currentUser || currentUser.role === 'attendee') && (
               (() => {
-                const isRegistered = registrations.some(r => r.eventId === event.id && r.participantEmail === currentUser.email);
+                const isRegistered = currentUser ? registrations.some(r => r.eventId === event.id && r.participantEmail === currentUser.email) : false;
                 const currentRegistrations = registrations.filter(r => r.eventId === event.id && r.status !== RegistrationStatus.REJECTED).length;
                 const isFull = currentRegistrations >= event.capacity;
                 const startDate = new Date(event.date);
@@ -1909,7 +1951,9 @@ export default function App() {
                     )}
                     <button
                       onClick={() => {
-                        if (isRegistered) {
+                        if (!currentUser) {
+                          setIsAuthModalOpen(true);
+                        } else if (isRegistered) {
                           const myReg = registrations.find(r => r.eventId === event.id && r.participantEmail === currentUser.email);
                           if (myReg) setSelectedRegistrationDetails(myReg);
                         } else if (!isClosed) {
@@ -1954,11 +1998,11 @@ export default function App() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 gap-4">
           <div>
             <h2 className="text-3xl font-bold text-white font-outfit tracking-tight">
-              {currentUser.role === 'organizer' && activeTab === 'browse' ? 'My Hosted Events' : 'Explore Experiences'}
+              {currentUser?.role === 'organizer' && activeTab === 'browse' ? 'My Hosted Events' : 'Explore Experiences'}
             </h2>
             <p className="text-slate-400 mt-2 text-lg">Discover and join amazing events happening near you.</p>
           </div>
-          {currentUser.role === 'organizer' && (
+          {currentUser?.role === 'organizer' && (
             <button
               onClick={() => { resetEventForm(); setIsCreateModalOpen(true); }}
               className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
@@ -1975,7 +2019,7 @@ export default function App() {
         ) : (
           <div className="space-y-16">
             {/* Recommendations Section */}
-            {currentUser.role === 'attendee' && (recommendedEvents.length > 0 || areRecommendationsLoading) && (
+            {currentUser?.role === 'attendee' && (recommendedEvents.length > 0 || areRecommendationsLoading) && (
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-6">
                   <Sparkles className="w-5 h-5 text-indigo-400" />
@@ -2663,9 +2707,11 @@ export default function App() {
 
       <main className="pt-6">
         {activeTab === 'browse' && renderEvents()}
-        {activeTab === 'my-tickets' && renderMyTickets()}
-        {activeTab === 'organizer' && renderOrganizer()}
+        {activeTab === 'my-tickets' && (currentUser ? renderMyTickets() : <div className="text-center py-20 text-slate-400">Please sign in to view your tickets.</div>)}
+        {activeTab === 'organizer' && (currentUser?.role === 'organizer' ? renderOrganizer() : <div className="text-center py-20 text-slate-400">Organizer dashboard requires organizer privileges.</div>)}
       </main>
+
+      {renderAuthModal()}
 
       {/* --- MODALS --- */}
 
@@ -3256,18 +3302,24 @@ export default function App() {
                   <div className="flex gap-2">
                     <input
                       type="tel"
-                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      disabled={!!currentUser?.phoneNumber}
+                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       value={profileForm.phoneNumber || ''}
                       onChange={e => setProfileForm({ ...profileForm, phoneNumber: e.target.value, isPhoneVerified: false })}
                       placeholder="+1234567890"
                     />
-                    {!profileForm.isPhoneVerified && profileForm.phoneNumber && (
+                    {!currentUser?.phoneNumber && !profileForm.isPhoneVerified && profileForm.phoneNumber && (
                       <button
                         type="button"
                         disabled={authLoading}
                         onClick={async () => {
                           if (authLoading) return;
                           if (!profileForm.phoneNumber) return;
+                          if (profileForm.phoneNumber === currentUser.phoneNumber) {
+                            setProfileForm({ ...profileForm, isPhoneVerified: true });
+                            return;
+                          }
+
                           const exists = await checkPhoneNumberExists(profileForm.phoneNumber);
                           if (exists) {
                             addToast('Phone number already in use by another account', 'error');
@@ -3281,21 +3333,10 @@ export default function App() {
 
                           setAuthLoading(true);
                           try {
-                            // Robust check for container with retries
-                            let recaptchaContainer = null;
-                            for (let i = 0; i < 10; i++) {
-                              recaptchaContainer = document.getElementById('profile-recaptcha');
-                              if (recaptchaContainer) break;
-                              await new Promise(resolve => setTimeout(resolve, 100));
-                            }
-
-                            if (!recaptchaContainer) {
-                              throw new Error("Recaptcha container not found. Please try again.");
-                            }
-
-                            const appVerifier = initRecaptcha('profile-recaptcha');
+                            const appVerifier = initRecaptcha('persistent-profile-recaptcha');
                             const confirmation = await signInWithPhone(profileForm.phoneNumber, appVerifier);
                             setConfirmationResult(confirmation);
+                            setOtpPurpose('profile');
                             setShowOtpInput(true);
                             addToast('OTP Sent', 'success');
                           } catch (e: any) {
@@ -3312,9 +3353,12 @@ export default function App() {
                     )}
                     {profileForm.isPhoneVerified && <CheckCircle className="w-6 h-6 text-green-500 mt-2" />}
                   </div>
-                  <div id="profile-recaptcha" className="mt-2"></div>
-
-                  {showOtpInput && !profileForm.isPhoneVerified && (
+                  {currentUser?.phoneNumber ? (
+                    <p className="text-xs text-slate-400 mt-1">Verified phone number cannot be changed.</p>
+                  ) : (
+                    <p className="text-xs text-slate-400 mt-1">Include country code (e.g. +1...)</p>
+                  )}
+                  {showOtpInput && (otpPurpose === 'deletion' || !profileForm.isPhoneVerified) && (
                     <div className="mt-2 flex gap-2 animate-in fade-in">
                       <input
                         type="text"
@@ -3326,20 +3370,59 @@ export default function App() {
                       <button
                         type="button"
                         onClick={async () => {
-                          try {
-                            await confirmationResult.confirm(otp);
-                            setProfileForm(prev => ({ ...prev, isPhoneVerified: true }));
-                            setShowOtpInput(false);
-                            setOtp('');
-                            addToast('Phone number verified!', 'success');
-                          } catch (e) {
-                            addToast('Invalid OTP', 'error');
+                          if (otpPurpose === 'deletion') {
+                            await handleConfirmDeletion();
+                          } else {
+                            try {
+                              await confirmationResult.confirm(otp);
+                              setProfileForm(prev => ({ ...prev, isPhoneVerified: true }));
+                              setShowOtpInput(false);
+                              setOtp('');
+                              addToast('Phone number verified!', 'success');
+                            } catch (e) {
+                              addToast('Invalid OTP', 'error');
+                            }
                           }
                         }}
-                        className="px-4 py-2 bg-green-600 rounded-lg text-white text-xs font-semibold hover:bg-green-700"
+                        className="px-4 py-2 bg-green-600 rounded-lg text-white text-xs font-semibold hover:bg-green-700 font-outfit"
                       >
                         Confirm
                       </button>
+                    </div>
+                  )}
+
+                  {!showOtpInput && (
+                    <div className="mt-8 pt-6 border-t border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-bold text-red-500 font-outfit">Danger Zone</h4>
+                          <p className="text-xs text-slate-500 mt-1">Permanently delete your account and all data</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={authLoading}
+                          onClick={() => {
+                            if (!currentUser?.phoneNumber) {
+                              addToast('Please add and verify a phone number first to enable account deletion.', 'warning');
+                              return;
+                            }
+                            if (confirm('Are you sure? This will permanently delete your account, events, and registrations. You will be logged out immediately.')) {
+                              handleSendDeleteOtp();
+                            }
+                          }}
+                          className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${!currentUser?.phoneNumber
+                            ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
+                            : 'bg-red-900/20 border-red-800/50 text-red-400 hover:bg-red-900/40'
+                            }`}
+                        >
+                          Delete Account
+                        </button>
+                      </div>
+                      {!currentUser?.phoneNumber && (
+                        <p className="text-[10px] text-amber-500/70 mt-2 bg-amber-500/5 p-2 rounded border border-amber-500/10 font-outfit">
+                          ⚠️ Phone verification is required for secure account deletion.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3998,8 +4081,21 @@ export default function App() {
               >
                 Close
               </button>
-              {currentUser.role === 'attendee' && (
+              {(!currentUser || currentUser.role === 'attendee') && (
                 (() => {
+                  if (!currentUser) {
+                    return (
+                      <button
+                        onClick={() => {
+                          setSelectedEventForDetails(null);
+                          setIsAuthModalOpen(true);
+                        }}
+                        className="order-1 sm:order-2 flex-[2] px-6 py-3 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20 active:scale-95 font-outfit"
+                      >
+                        Sign In to Register
+                      </button>
+                    );
+                  }
                   const isRegistered = registrations.some(r => r.eventId === selectedEventForDetails.id && r.participantEmail === currentUser.email);
                   const currentRegsCount = registrations.filter(r => r.eventId === selectedEventForDetails.id && r.status !== RegistrationStatus.REJECTED).length;
                   const isFull = currentRegsCount >= (selectedEventForDetails.capacity as number);

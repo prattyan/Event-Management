@@ -50,6 +50,10 @@
 
 <body class="bg-slate-950 text-slate-100 antialiased">
   <div id="root"></div>
+
+  <!-- Permanent reCAPTCHA Containers for Firebase Auth -->
+  <div id="persistent-recaptcha-container" style="visibility: hidden; position: absolute; pointer-events: none;"></div>
+  <div id="persistent-profile-recaptcha" style="visibility: hidden; position: absolute; pointer-events: none;"></div>
   <script type="module" src="/index.tsx"></script>
   <script>
     if ('serviceWorker' in navigator) {
