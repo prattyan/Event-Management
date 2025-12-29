@@ -12,7 +12,7 @@ interface AnalyticsDashboardProps {
     registrations: Registration[];
 }
 
-const COLORS = ['#6366f1', '#10b981', '#ef4444', '#f59e0b']; // Indigo, Green, Red, Amber
+const COLORS = ['#d97757', '#10b981', '#ef4444', '#f59e0b']; // Indigo, Green, Red, Amber
 
 export default function AnalyticsDashboard({ events, registrations }: AnalyticsDashboardProps) {
 
@@ -100,7 +100,7 @@ export default function AnalyticsDashboard({ events, registrations }: AnalyticsD
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center gap-4">
-                    <div className="p-3 bg-indigo-500/10 rounded-lg text-indigo-400">
+                    <div className="p-3 bg-orange-500/10 rounded-lg text-orange-400">
                         <Users className="w-6 h-6" />
                     </div>
                     <div>
@@ -152,8 +152,8 @@ export default function AnalyticsDashboard({ events, registrations }: AnalyticsD
                             <AreaChart data={timeSeriesData}>
                                 <defs>
                                     <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                        <stop offset="5%" stopColor="#d97757" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#d97757" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
@@ -161,9 +161,9 @@ export default function AnalyticsDashboard({ events, registrations }: AnalyticsD
                                 <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f1f5f9' }}
-                                    itemStyle={{ color: '#818cf8' }}
+                                    itemStyle={{ color: '#fb923c' }}
                                 />
-                                <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                                <Area type="monotone" dataKey="count" stroke="#d97757" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>

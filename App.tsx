@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'react-qr-code';
 import {
-  Calendar, MapPin, Plus, QrCode, CheckCircle, XCircle, Sparkles, ScanLine,
-  Search, Users, Clock, X, Check, ChevronRight, ChevronLeft, Trash2, Edit, Link,
-  Save, Upload, Image as ImageIcon, Loader2, Menu, LogOut, Download, Bell,
-  Send, MessageSquare, UserCircle, KeyRound, Mail, Filter, ExternalLink,
-  Share2, Facebook, Twitter, Linkedin, Copy, Star, CalendarPlus // Removed Smartphone
+  Users, Sparkles, MapPin, ExternalLink, QrCode, ChevronRight, Edit, Calendar, Clock, Plus, ScanLine, Filter, Download, Mail, Send, CheckCircle, XCircle, UserPlus, Info, Trash2, Camera, RefreshCw, Smartphone, Shield, LogOut, Settings as Setting2, Layout, Bell, UserCircle, Search, MoreHorizontal, Check, AlertCircle, CheckSquare, MessageSquare, KeyRound, Share2, Facebook, Twitter, Linkedin, Copy, Star, CalendarPlus, Loader2, Image as ImageIcon, X, ChevronLeft, Link, Save, Upload
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
 
-import { Event, Registration, RegistrationStatus, Tab, Toast, User, Role, CustomQuestion, Review, ParticipationMode, Team } from './types';
+import { Event as AppEvent, Registration, RegistrationStatus, Tab, Toast, User, Role, CustomQuestion, Review, ParticipationMode, Team } from './types';
 import {
   getEvents, saveEvent, updateEvent, getRegistrations, addRegistration,
   updateRegistrationStatus, markAttendance, deleteRegistration, deleteEvent,
@@ -25,28 +22,47 @@ import { generateEventDescription, getEventRecommendations } from './services/ge
 import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificationService';
 import Scanner from './components/Scanner';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import LiquidChrome from './components/LiquidChrome';
 import { socketService } from './services/socketService';
 
 // --- Sub-Components ---
 
 const ToastContainer = ({ toasts }: { toasts: Toast[] }) => (
-  <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none w-full max-w-sm px-4 sm:px-0">
-    {toasts.map(t => (
-      <div
-        key={t.id}
-        className={`pointer-events-auto shadow-2xl rounded-lg px-6 py-4 text-base font-medium flex items-center justify-center gap-3 transform transition-all duration-300 animate-in fade-in zoom-in-95
-          ${t.type === 'success' ? 'bg-green-600 text-white' :
-            t.type === 'error' ? 'bg-red-600 text-white' :
-              t.type === 'warning' ? 'bg-amber-600 text-white' :
-                'bg-blue-600 text-white'
-          } `}
-      >
-        {t.type === 'success' && <CheckCircle className="w-5 h-5 flex-shrink-0" />}
-        {t.type === 'error' && <XCircle className="w-5 h-5 flex-shrink-0" />}
-        {t.type === 'warning' && <ScanLine className="w-5 h-5 flex-shrink-0" />}
-        <span className="break-words text-center">{t.message}</span>
-      </div>
-    ))}
+  <div className="fixed bottom-12 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-3 pointer-events-none w-full max-w-sm px-4 sm:px-0">
+    <AnimatePresence>
+      {toasts.map(t => (
+        <motion.div
+          key={t.id}
+          initial={{ opacity: 0, y: 20, scale: 0.9 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+          className={`pointer-events-auto border-2 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[24px] px-7 py-5 text-sm font-black flex items-center gap-4 relative overflow-hidden
+            ${t.type === 'success' ? 'bg-[#020617] border-green-500/30 text-green-400' :
+              t.type === 'error' ? 'bg-[#020617] border-red-500/30 text-red-400' :
+                t.type === 'warning' ? 'bg-[#020617] border-amber-500/30 text-amber-400' :
+                  'bg-[#020617] border-orange-500/30 text-orange-400'
+            } `}
+        >
+          <div className={`absolute -inset-1 opacity-20 blur-xl -z-10 ${t.type === 'success' ? 'bg-green-500' :
+            t.type === 'error' ? 'bg-red-500' :
+              t.type === 'warning' ? 'bg-amber-500' :
+                'bg-orange-500'
+            }`} />
+
+          <div className={`p-2 rounded-xl flex-shrink-0 ${t.type === 'success' ? 'bg-green-500/20' :
+            t.type === 'error' ? 'bg-red-500/20' :
+              t.type === 'warning' ? 'bg-amber-500/20' :
+                'bg-orange-500/20'
+            }`}>
+            {t.type === 'success' && <CheckCircle className="w-5 h-5" />}
+            {t.type === 'error' && <XCircle className="w-5 h-5" />}
+            {t.type === 'warning' && <AlertCircle className="w-5 h-5" />}
+            {(t.type === 'info' || !t.type) && <Info className="w-5 h-5" />}
+          </div>
+          <span className="flex-1 leading-snug tracking-tight">{t.message}</span>
+        </motion.div>
+      ))}
+    </AnimatePresence>
   </div>
 );
 
@@ -55,7 +71,7 @@ const Badge = ({ status }: { status: RegistrationStatus }) => {
     [RegistrationStatus.PENDING]: 'bg-amber-900/40 text-amber-500 border-amber-800',
     [RegistrationStatus.APPROVED]: 'bg-green-900/40 text-green-500 border-green-800',
     [RegistrationStatus.REJECTED]: 'bg-red-900/40 text-red-500 border-red-800',
-    [RegistrationStatus.WAITLISTED]: 'bg-indigo-900/40 text-indigo-400 border-indigo-800',
+    [RegistrationStatus.WAITLISTED]: 'bg-orange-900/40 text-orange-400 border-orange-800',
   };
 
   return (
@@ -183,6 +199,8 @@ const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<string> => {
   });
 };
 
+
+
 // --- Main App Component ---
 
 export default function App() {
@@ -201,7 +219,7 @@ export default function App() {
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState<Tab>('browse');
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<AppEvent[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -225,7 +243,7 @@ export default function App() {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className={`text-indigo-400 hover:text-indigo-300 hover:underline transition-colors flex items-center gap-1 inline-flex ${className}`}
+            className={`text-orange-400 hover:text-orange-300 hover:underline transition-colors flex items-center gap-1 inline-flex ${className}`}
             onClick={(e) => e.stopPropagation()}
           >
             {location}
@@ -237,12 +255,18 @@ export default function App() {
     return <span className={className}>{location}</span>;
   };
 
+  const isPastEvent = (e: AppEvent) => {
+    const now = new Date();
+    const end = e.endDate ? new Date(e.endDate) : new Date(new Date(e.date).getTime() + 3600000);
+    return end < now;
+  };
+
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [selectedEventForReg, setSelectedEventForReg] = useState<Event | null>(null);
-  const [selectedEventForDetails, setSelectedEventForDetails] = useState<Event | null>(null);
+  const [selectedEventForReg, setSelectedEventForReg] = useState<AppEvent | null>(null);
+  const [selectedEventForDetails, setSelectedEventForDetails] = useState<AppEvent | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<Registration | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [detailsTab, setDetailsTab] = useState<'info' | 'discussion'>('info');
@@ -251,6 +275,9 @@ export default function App() {
   const [organizerSelectedEventId, setOrganizerSelectedEventId] = useState<string | null>(null);
   const [organizerView, setOrganizerView] = useState<'overview' | 'events'>('overview');
   const [isSendingReminders, setIsSendingReminders] = useState(false);
+  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [announcementText, setAnnouncementText] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | RegistrationStatus>('ALL');
   const [attendanceFilter, setAttendanceFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL');
   const [selectedRegistrationIds, setSelectedRegistrationIds] = useState<string[]>([]);
@@ -281,6 +308,7 @@ export default function App() {
   const [tempImageSrc, setTempImageSrc] = useState<string | null>(null);
   const [isCropperOpen, setIsCropperOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // --- Initialization ---
 
@@ -348,8 +376,9 @@ export default function App() {
 
   // Profile Edit State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({ name: '', email: '' });
+  const [profileForm, setProfileForm] = useState<{ name: string; email: string; avatarUrl?: string; phoneNumber?: string; isPhoneVerified?: boolean }>({ name: '', email: '' });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [cropPurpose, setCropPurpose] = useState<'event' | 'profile'>('event'); // Track what we are cropping
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -366,7 +395,8 @@ export default function App() {
       const updatedUser = {
         ...currentUser,
         name: profileForm.name,
-        phoneNumber: profileForm.phoneNumber
+        phoneNumber: profileForm.phoneNumber,
+        avatarUrl: profileForm.avatarUrl
       };
       await saveUserProfile(updatedUser);
       setCurrentUser(updatedUser);
@@ -456,6 +486,23 @@ export default function App() {
     const interval = setInterval(() => loadData(true), 120000);
     return () => clearInterval(interval);
   }, [currentUser]);
+
+  const handleCancelRegistration = async (registrationId: string) => {
+    if (!window.confirm('Are you sure you want to cancel your registration for this event?')) return;
+
+    try {
+      const success = await deleteRegistration(registrationId);
+      if (success) {
+        addToast('Registration cancelled successfully', 'success');
+        loadData(true);
+      } else {
+        addToast('Failed to cancel registration', 'error');
+      }
+    } catch (error) {
+      console.error('Cancellation error:', error);
+      addToast('An error occurred during cancellation', 'error');
+    }
+  };
 
   useEffect(() => {
     const fetchMessages = async (isSilent = false) => {
@@ -557,7 +604,7 @@ export default function App() {
   }, [currentUser, registrations, events]);
 
   // Recommendations Logic
-  const [recommendedEvents, setRecommendedEvents] = useState<Event[]>([]);
+  const [recommendedEvents, setRecommendedEvents] = useState<AppEvent[]>([]);
   const [areRecommendationsLoading, setAreRecommendationsLoading] = useState(false);
   const [isAiUnavailable, setIsAiUnavailable] = useState(false);
 
@@ -719,13 +766,15 @@ export default function App() {
 
   // --- App Handlers ---
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, purpose: 'event' | 'profile' = 'event') => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
         addToast('Image size should be less than 5MB', 'error');
         return;
       }
+
+      setCropPurpose(purpose);
 
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -745,7 +794,12 @@ export default function App() {
     if (!tempImageSrc || !croppedAreaPixels) return;
     try {
       const croppedImage = await getCroppedImg(tempImageSrc, croppedAreaPixels);
-      setNewEvent(prev => ({ ...prev, imageUrl: croppedImage }));
+      if (cropPurpose === 'event') {
+        setNewEvent(prev => ({ ...prev, imageUrl: croppedImage }));
+      } else {
+        setProfileForm(prev => ({ ...prev, avatarUrl: croppedImage }));
+        // If we want immediate feedback on the user object (optional, but form state is enough for preview)
+      }
       setIsCropperOpen(false);
       setTempImageSrc(null);
     } catch (e) {
@@ -763,7 +817,7 @@ export default function App() {
     setEditingEventId(null);
   };
 
-  const handleEditClick = async (event: Event) => {
+  const handleEditClick = async (event: AppEvent) => {
     // Fetch full event details to ensure description/imageUrl are present
     addToast('Loading event details...', 'info');
     const fullEvent = await getEventById(event.id);
@@ -1070,7 +1124,7 @@ export default function App() {
     addToast(`Participant ${status.toLowerCase()} and notified`, 'success');
   };
 
-  const handleSendReminders = async (event: Event) => {
+  const handleSendReminders = async (event: AppEvent) => {
     if (!confirm(`Send email reminders to all approved attendees for "${event.title}"?`)) return;
 
     setIsSendingReminders(true);
@@ -1102,7 +1156,48 @@ export default function App() {
     addToast(`Sent reminders to ${count} attendees.`, 'success');
   };
 
-  const handleExportCSV = (event: Event) => {
+  const handleBroadcastAnnouncement = async () => {
+    if (!organizerSelectedEventId || !announcementText.trim()) {
+      addToast('Please enter a message to broadcast.', 'error');
+      return;
+    }
+    const event = events.find(e => e.id === organizerSelectedEventId);
+    if (!event) return;
+
+    setIsBroadcasting(true);
+    try {
+      const approvedParticipants = registrations.filter(r =>
+        r.eventId === event.id &&
+        r.status === RegistrationStatus.APPROVED
+      );
+
+      if (approvedParticipants.length === 0) {
+        addToast('No approved participants to notify.', 'info');
+        return;
+      }
+
+      await Promise.all(approvedParticipants.map(participant =>
+        addNotification({
+          userId: participant.participantId,
+          title: `Announcement: ${event.title}`,
+          message: announcementText.trim(),
+          type: 'info',
+          link: 'my-tickets'
+        })
+      ));
+
+      addToast(`Announcement broadcasted to ${approvedParticipants.length} participants!`, 'success');
+      setAnnouncementText('');
+      setIsAnnouncementModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      addToast('Failed to broadcast announcement.', 'error');
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
+  const handleExportCSV = (event: AppEvent) => {
     const eventRegs = registrations.filter(r => r.eventId === event.id);
     if (eventRegs.length === 0) {
       addToast('No participants to export.', 'info');
@@ -1349,7 +1444,7 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+        <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
       </div>
     );
   }
@@ -1367,7 +1462,7 @@ export default function App() {
               <XCircle className="w-6 h-6" />
             </button>
           )}
-          <div className="bg-indigo-600 p-8 md:w-1/2 flex flex-col justify-center text-white relative overflow-hidden">
+          <div className="bg-orange-600 p-8 md:w-1/2 flex flex-col justify-center text-white relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80')] bg-cover opacity-20"></div>
             <div className="relative z-10">
               <div className="flex items-center gap-2 mb-6">
@@ -1376,20 +1471,20 @@ export default function App() {
                 </div>
                 <h1 className="text-3xl font-bold">EventHorizon</h1>
               </div>
-              <p className="text-indigo-100 text-lg mb-8 leading-relaxed">
+              <p className="text-orange-100 text-lg mb-8 leading-relaxed">
                 The all-in-one platform for seamless event management. Create events, register attendees, and check them in with ease.
               </p>
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-indigo-300" />
+                  <CheckCircle className="w-5 h-5 text-orange-300" />
                   <span>AI-Powered Event Creation</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-indigo-300" />
+                  <CheckCircle className="w-5 h-5 text-orange-300" />
                   <span>QR Code Ticketing & Check-in</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-indigo-300" />
+                  <CheckCircle className="w-5 h-5 text-orange-300" />
                   <span>Instant Approval Workflow</span>
                 </div>
               </div>
@@ -1401,9 +1496,26 @@ export default function App() {
               <h2 className="text-2xl font-bold text-white mb-2">
                 {isAuthMode === 'signin' ? 'Welcome back' : isAuthMode === 'forgot-password' ? 'Reset Password' : 'Create an account'}
               </h2>
-              <p className="text-slate-400 mb-8">
+              <p className="text-slate-400 mb-8 italic">
                 {isAuthMode === 'signin' ? 'Please enter your details to sign in.' : isAuthMode === 'forgot-password' ? 'Enter your email to receive a reset link.' : 'Get started with EventHorizon today.'}
               </p>
+
+              {(isAuthMode === 'signin' || isAuthMode === 'signup') && (
+                <div className="mb-8 flex p-1.5 liquid-glass rounded-2xl border border-white/5 w-fit mx-auto lg:mx-0">
+                  <button
+                    onClick={() => setLoginMethod('email')}
+                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${loginMethod === 'email' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    E-Mail
+                  </button>
+                  <button
+                    onClick={() => setLoginMethod('phone')}
+                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${loginMethod === 'phone' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    Phone
+                  </button>
+                </div>
+              )}
 
               {isAuthMode === 'forgot-password' ? (
                 <form onSubmit={handlePasswordReset} className="space-y-4">
@@ -1416,7 +1528,7 @@ export default function App() {
                         type="email"
                         required
                         placeholder="you@example.com"
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                         value={resetEmail}
                         onChange={e => setResetEmail(e.target.value)}
                       />
@@ -1425,7 +1537,7 @@ export default function App() {
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-70 flex items-center justify-center"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-70 flex items-center justify-center"
                   >
                     {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Send Reset Link'}
                   </button>
@@ -1455,7 +1567,7 @@ export default function App() {
                           type="text"
                           required
                           placeholder="John Doe"
-                          className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                          className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                           value={authForm.name}
                           onChange={e => setAuthForm({ ...authForm, name: e.target.value })}
                         />
@@ -1468,14 +1580,14 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => { setLoginMethod('email'); setShowOtpInput(false); }}
-                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'email' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'email' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
                       >
                         Email
                       </button>
                       <button
                         type="button"
                         onClick={() => setLoginMethod('phone')}
-                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'phone' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
+                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'phone' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
                       >
                         Phone
                       </button>
@@ -1493,7 +1605,7 @@ export default function App() {
                             type="email"
                             required
                             placeholder="you@example.com"
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                             value={authForm.email}
                             onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
                           />
@@ -1509,7 +1621,7 @@ export default function App() {
                             type="password"
                             required
                             placeholder="••••••••"
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                             value={authForm.password}
                             onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
                           />
@@ -1528,7 +1640,7 @@ export default function App() {
                               type="tel"
                               required
                               placeholder="+1 555 123 4567"
-                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
                               value={phoneNumber}
                               onChange={e => setPhoneNumber(e.target.value)}
                             />
@@ -1544,7 +1656,7 @@ export default function App() {
                               type="text"
                               required
                               placeholder="123456"
-                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none tracking-widest text-center"
+                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none tracking-widest text-center"
                               value={otp}
                               onChange={e => setOtp(e.target.value)}
                             />
@@ -1562,7 +1674,7 @@ export default function App() {
                           type="button"
                           onClick={() => setAuthForm({ ...authForm, role: 'attendee' })}
                           className={`py-2 px-4 rounded-lg text-sm font-medium border ${authForm.role === 'attendee'
-                            ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400'
+                            ? 'bg-orange-900/40 border-orange-500 text-orange-400'
                             : 'bg-slate-950 border-slate-700 text-slate-400 hover:bg-slate-800'
                             }`}
                         >
@@ -1572,7 +1684,7 @@ export default function App() {
                           type="button"
                           onClick={() => setAuthForm({ ...authForm, role: 'organizer' })}
                           className={`py-2 px-4 rounded-lg text-sm font-medium border ${authForm.role === 'organizer'
-                            ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400'
+                            ? 'bg-orange-900/40 border-orange-500 text-orange-400'
                             : 'bg-slate-950 border-slate-700 text-slate-400 hover:bg-slate-800'
                             }`}
                         >
@@ -1594,7 +1706,7 @@ export default function App() {
                         handleLogin(e);
                       }
                     }}
-                    className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                    className="w-full bg-orange-600 text-white py-2 rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
                   >
                     {authLoading ? 'Please wait...' : (
                       isAuthMode === 'signup'
@@ -1610,7 +1722,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => { setIsAuthMode('forgot-password'); setResetEmail(''); }}
-                        className="text-indigo-400 text-xs hover:underline"
+                        className="text-orange-400 text-xs hover:underline"
                       >
                         Forgot Password?
                       </button>
@@ -1683,7 +1795,7 @@ export default function App() {
                     {isAuthMode === 'signin' ? "Don't have an account? " : "Already have an account? "}
                     <button
                       onClick={() => setIsAuthMode(isAuthMode === 'signin' ? 'signup' : 'signin')}
-                      className="font-semibold text-indigo-400 hover:text-indigo-300"
+                      className="font-semibold text-orange-400 hover:text-orange-300"
                     >
                       {isAuthMode === 'signin' ? 'Sign up' : 'Sign in'}
                     </button>
@@ -1700,70 +1812,98 @@ export default function App() {
   // --- Authenticated Views ---
 
   const renderHeader = () => (
-    <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 p-2 rounded-lg flex-shrink-0">
-            <Calendar className="w-5 h-5 text-white" />
+    <header className="sticky top-0 z-40 liquid-glass border-b border-orange-500/10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="flex items-center group cursor-pointer" onClick={() => setActiveTab('browse')}>
+          <div className="flex flex-col">
+            <span className="text-2xl font-black font-outfit tracking-tighter text-refraction">
+              EventHorizon
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-orange-400 -mt-1 pl-0.5">Premium Events</span>
           </div>
-          <span className="hidden sm:block text-xl font-bold bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-            EventHorizon
-          </span>
         </div>
 
-        <nav className="hidden md:flex items-center gap-1 sm:gap-2">
-          <button
-            onClick={() => setActiveTab('browse')}
-            className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'browse' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'}`}
-          >
-            Browse
-          </button>
-
-          {currentUser && (
-            <>
-              {currentUser.role === 'organizer' && (
-                <button
-                  onClick={() => setActiveTab('organizer')}
-                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'organizer' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'}`}
-                >
-                  Dashboard
-                </button>
+        <nav className="hidden lg:flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/5 relative">
+          {[
+            { id: 'browse', label: 'Explore' },
+            { id: 'organizer', label: 'Dashboard', show: currentUser?.role === 'organizer' },
+            { id: 'my-tickets', label: 'My Tickets', show: currentUser?.role === 'attendee' }
+          ].filter(item => item.show !== false).map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as Tab)}
+              className={`relative px-6 py-2 rounded-xl text-sm font-black font-outfit transition-all duration-300 whitespace-nowrap z-10 ${activeTab === item.id ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+            >
+              <span className="relative z-10">{item.label}</span>
+              {activeTab === item.id && (
+                <motion.div
+                  layoutId="header-pill"
+                  className="absolute inset-0 bg-orange-600 rounded-xl shadow-lg shadow-orange-600/30"
+                  transition={{ type: 'spring', bounce: 0.15, duration: 0.6 }}
+                />
               )}
-              {currentUser.role === 'attendee' && (
-                <button
-                  onClick={() => setActiveTab('my-tickets')}
-                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'my-tickets' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'}`}
-                >
-                  My Tickets
-                </button>
-              )}
-            </>
-          )}
+            </button>
+          ))}
         </nav>
 
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="lg:hidden p-3 rounded-xl bg-white/5 text-slate-400 hover:text-orange-400 transition-all border border-white/5"
+          >
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <MoreHorizontal className="w-5 h-5" />}
+          </button>
+
+          <AnimatePresence>
+            {isMobileMenuOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="absolute top-[88px] left-4 right-4 liquid-glass rounded-3xl border border-white/10 p-4 z-50 lg:hidden flex flex-col gap-2 shadow-2xl"
+              >
+                {[
+                  { id: 'browse', label: 'Explore', icon: Sparkles },
+                  { id: 'organizer', label: 'Dashboard', show: currentUser?.role === 'organizer', icon: Layout },
+                  { id: 'my-tickets', label: 'My Tickets', show: currentUser?.role === 'attendee', icon: QrCode }
+                ].filter(item => item.show !== false).map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as Tab);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center gap-4 px-6 py-4 rounded-2xl text-sm font-bold font-outfit transition-all ${activeTab === item.id ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                  >
+                    <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-white' : 'text-orange-500'}`} />
+                    {item.label}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className="relative">
             <button
               onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-              className={`p-2 rounded-lg transition-colors relative ${isNotificationsOpen ? 'bg-slate-800 text-indigo-400' : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800'}`}
+              className={`p-3 rounded-xl transition-all relative ${isNotificationsOpen ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'bg-white/5 text-slate-400 hover:text-orange-400 hover:bg-white/10'}`}
             >
               <Bell className="w-5 h-5" />
               {notifications.filter(n => !n.read).length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-slate-900"></span>
+                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-900 animate-pulse"></span>
               )}
             </button>
 
             {isNotificationsOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setIsNotificationsOpen(false)}></div>
-                <div className="absolute right-0 mt-2 w-72 xs:w-80 bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 py-2 z-20 animate-in fade-in zoom-in-95 origin-top-right overflow-hidden flex flex-col max-h-[440px]">
-                  <div className="px-4 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-                    <h3 className="text-sm font-bold text-white">Notifications</h3>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{notifications.length} Total</span>
+                <div className="absolute right-0 mt-4 w-80 xs:w-96 liquid-glass rounded-3xl shadow-2xl border border-white/10 py-0 z-20 animate-in fade-in zoom-in-95 origin-top-right overflow-hidden flex flex-col max-h-[500px]">
+                  <div className="px-6 py-5 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                    <h3 className="text-lg font-bold text-white font-outfit">Notifications</h3>
+                    <span className="px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-400 text-[10px] font-black uppercase tracking-wider border border-orange-500/20">{notifications.length} New</span>
                   </div>
-                  <div className="overflow-y-auto custom-scrollbar flex-1 bg-slate-900">
+                  <div className="overflow-y-auto custom-scrollbar flex-1">
                     {notifications.length > 0 ? (
-                      notifications.map(notif => (
+                      notifications.slice(0, 10).map(notif => (
                         <div
                           key={notif.id}
                           onClick={async () => {
@@ -1776,32 +1916,39 @@ export default function App() {
                               setIsNotificationsOpen(false);
                             }
                           }}
-                          className={`px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors relative ${!notif.read ? 'bg-indigo-600/5' : ''}`}
+                          className={`px-6 py-4 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-all relative group ${!notif.read ? 'bg-orange-500/5' : ''}`}
                         >
-                          <div className="flex items-start gap-3">
-                            <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${notif.type === 'success' ? 'bg-green-500' : notif.type === 'warning' ? 'bg-amber-500' : 'bg-indigo-500'} ${notif.read ? 'opacity-0' : ''}`}></div>
+                          <div className="flex items-start gap-4">
+                            <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 shadow-sm ${notif.type === 'success' ? 'bg-emerald-400 shadow-emerald-500/50' : notif.type === 'warning' ? 'bg-amber-400 shadow-amber-500/50' : 'bg-orange-400 shadow-orange-500/50'} ${notif.read ? 'opacity-20' : ''}`}></div>
                             <div className="flex-1">
-                              <p className={`text-sm ${notif.read ? 'text-slate-300' : 'text-white font-semibold'}`}>{notif.title}</p>
-                              <p className="text-xs text-slate-400 mt-1 line-clamp-2">{notif.message}</p>
-                              <p className="text-[10px] text-slate-500 mt-2 mt-auto">{format(new Date(notif.createdAt), 'MMM d, h:mm a')}</p>
+                              <p className={`text-sm ${notif.read ? 'text-slate-400' : 'text-white font-bold font-outfit'}`}>{notif.title}</p>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{notif.message}</p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <Clock className="w-3 h-3 text-slate-500" />
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{format(new Date(notif.createdAt), 'MMM d, h:mm a')}</p>
+                              </div>
                             </div>
+                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-orange-400 group-hover:translate-x-1 transition-all mt-1" />
                           </div>
                         </div>
                       ))
                     ) : (
-                      <div className="py-12 text-center">
-                        <Bell className="w-8 h-8 text-slate-800 mx-auto mb-2" />
-                        <p className="text-sm text-slate-500">No notifications yet</p>
+                      <div className="py-20 text-center flex flex-col items-center">
+                        <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4">
+                          <Bell className="w-8 h-8 text-slate-600" />
+                        </div>
+                        <p className="text-slate-400 text-sm font-medium">No notifications yet</p>
+                        <p className="text-slate-500 text-xs mt-1">We'll alert you when something happens</p>
                       </div>
                     )}
                   </div>
                   {notifications.length > 0 && (
-                    <div className="px-4 py-2 border-t border-slate-800 bg-slate-900/50">
+                    <div className="px-6 py-4 border-t border-white/5 bg-white/[0.02]">
                       <button
                         onClick={() => setIsNotificationsOpen(false)}
-                        className="text-xs text-indigo-400 font-medium hover:text-indigo-300 w-full text-center"
+                        className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400 hover:text-orange-300 w-full text-center py-2 rounded-xl"
                       >
-                        Close
+                        Dismiss All
                       </button>
                     </div>
                   )}
@@ -1811,17 +1958,21 @@ export default function App() {
           </div>
 
           {currentUser ? (
-            <>
-              <div className="hidden md:flex flex-col items-end">
-                <span className="text-sm font-medium text-slate-200">{currentUser.name}</span>
-                <span className="text-xs text-slate-400 capitalize">{currentUser.role}</span>
+            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+              <div className="hidden sm:flex flex-col items-end">
+                <span className="text-sm font-black font-outfit text-white tracking-tight leading-none">{currentUser.name}</span>
+                <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mt-1 opacity-80">{currentUser.role}</span>
               </div>
               <div className="relative">
                 <button
                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
+                  className="w-11 h-11 bg-gradient-to-br from-orange-500/20 to-amber-500/20 rounded-2xl flex items-center justify-center border border-white/10 hover:border-orange-500/50 transition-all group overflow-hidden"
                 >
-                  <Menu className="w-6 h-6" />
+                  {currentUser.avatarUrl ? (
+                    <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <UserCircle className="w-7 h-7 text-slate-300 group-hover:text-white group-hover:scale-110 transition-all" />
+                  )}
                 </button>
 
                 {isProfileMenuOpen && (
@@ -1830,48 +1981,51 @@ export default function App() {
                       className="fixed inset-0 z-10 cursor-default"
                       onClick={() => setIsProfileMenuOpen(false)}
                     ></div>
-                    <div className="absolute right-0 mt-2 w-48 bg-slate-800 rounded-xl shadow-xl border border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 origin-top-right">
-                      <div className="px-4 py-3 border-b border-slate-700 md:hidden">
-                        <p className="text-sm font-semibold text-slate-200">{currentUser.name}</p>
-                        <p className="text-xs text-slate-400 truncate">{currentUser.email}</p>
+                    <div className="absolute right-0 mt-4 w-64 liquid-glass rounded-3xl shadow-2xl border border-white/10 py-3 z-20 animate-in fade-in zoom-in-95 origin-top-right">
+                      <div className="px-6 py-4 border-b border-white/5 md:hidden mb-2">
+                        <p className="text-sm font-bold text-white font-outfit">{currentUser.name}</p>
+                        <p className="text-xs text-slate-400 truncate opacity-60 tracking-tight">{currentUser.email}</p>
                       </div>
-                      <button
-                        onClick={() => {
-                          setProfileForm({
-                            name: currentUser.name,
-                            email: currentUser.email,
-                            phoneNumber: currentUser.phoneNumber || '',
-                            isPhoneVerified: !!currentUser.phoneNumber
-                          });
-                          setOtp('');
-                          setOtpPurpose('profile');
-                          setShowOtpInput(false);
-                          setConfirmationResult(null);
-                          setIsProfileModalOpen(true);
-                          setIsProfileMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-indigo-400 flex items-center gap-2"
-                      >
-                        <UserCircle className="w-4 h-4" /> Edit Profile
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleLogout();
-                          setIsProfileMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-slate-700 flex items-center gap-2"
-                      >
-                        <LogOut className="w-4 h-4" /> Sign Out
-                      </button>
+                      <div className="px-3 space-y-1">
+                        <button
+                          onClick={() => {
+                            setProfileForm({
+                              name: currentUser.name,
+                              email: currentUser.email,
+                              phoneNumber: currentUser.phoneNumber || '',
+                              isPhoneVerified: !!currentUser.phoneNumber,
+                              avatarUrl: currentUser.avatarUrl
+                            });
+                            setOtp('');
+                            setOtpPurpose('profile');
+                            setShowOtpInput(false);
+                            setConfirmationResult(null);
+                            setIsProfileModalOpen(true);
+                            setIsProfileMenuOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-3 text-sm font-bold font-outfit text-slate-300 hover:bg-orange-600 hover:text-white rounded-xl transition-all flex items-center gap-3 group"
+                        >
+                          <UserCircle className="w-5 h-5 text-orange-400 group-hover:text-white" /> Edit Profile
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleLogout();
+                            setIsProfileMenuOpen(false);
+                          }}
+                          className="w-full text-left px-4 py-3 text-sm font-bold font-outfit text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl transition-all flex items-center gap-3 group"
+                        >
+                          <LogOut className="w-5 h-5 group-hover:text-white" /> Sign Out
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
               </div>
-            </>
+            </div>
           ) : (
             <button
               onClick={() => setIsAuthModalOpen(true)}
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+              className="px-5 sm:px-8 py-3 bg-orange-600 text-white rounded-2xl text-xs sm:text-sm font-black font-outfit hover:bg-orange-700 transition-all shadow-xl shadow-orange-600/30 active:scale-95 uppercase tracking-wider"
             >
               Sign In
             </button>
@@ -1887,47 +2041,53 @@ export default function App() {
       : events;
 
     const now = new Date();
-    const isPastEvent = (e: Event) => {
-      const end = e.endDate ? new Date(e.endDate) : new Date(new Date(e.date).getTime() + 3600000);
-      return end < now;
-    };
-
     const upcomingEvents = visibleEvents.filter(e => !isPastEvent(e)).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const pastEvents = visibleEvents.filter(e => isPastEvent(e)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const renderEventCard = (event: Event) => {
+    const renderEventCard = (event: AppEvent, index: number) => {
       const isPast = isPastEvent(event);
       return (
-        <div key={event.id} className={`group bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 flex flex-col h-full ${isPast ? 'opacity-60 grayscale' : ''}`}>
-          <div className="relative h-48 overflow-hidden">
-            <LazyEventImage eventId={event.id} initialSrc={event.imageUrl} alt={event.title} className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
-            <div className={`absolute top-4 right-4 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold shadow-sm ${event.locationType === 'online' ? 'bg-indigo-900/90 text-indigo-200 border border-indigo-500/30' : 'bg-slate-800/90 text-slate-200'}`}>
+        <motion.div
+          key={event.id}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: index * 0.1 }}
+          className={`group glass-card rounded-[32px] overflow-hidden transition-all duration-500 flex flex-col h-full bg-[#0f172a]/40 border-orange-500/5 hover:border-orange-500/20 ${isPast ? 'opacity-50 grayscale' : ''}`}
+        >
+          <div className="relative h-56 overflow-hidden">
+            <LazyEventImage eventId={event.id} initialSrc={event.imageUrl} alt={event.title} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700" />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+            <div className={`absolute top-4 right-4 backdrop-blur-md px-4 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl z-10 ${event.locationType === 'online' ? 'bg-orange-600/90 text-white border border-orange-400/30' : 'bg-slate-900/90 text-white border border-white/10'}`}>
               {event.locationType === 'online' ? 'Online' : 'Offline'}
             </div>
+
+            <div className="absolute bottom-4 left-4 z-10 flex gap-2">
+              <span className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-lg text-[10px] font-bold text-white border border-white/10 group-hover:bg-orange-600/50 transition-colors">
+                {event.capacity} Capacity
+              </span>
+            </div>
           </div>
-          <div className="p-6 flex-1 flex flex-col">
-            <div className="flex items-center gap-4 text-sm mb-3">
-              <div className="flex items-center gap-1 text-indigo-600 font-medium font-outfit">
-                <Calendar className="w-4 h-4" />
-                {format(new Date(event.date), 'MMM d, yyyy')}
-              </div>
-              <div className="flex items-center gap-1 text-slate-400">
-                <Users className="w-4 h-4" />
-                {event.capacity} seats
-              </div>
+
+          <div className="p-8 flex-1 flex flex-col">
+            <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-6 bg-orange-500/5 w-fit px-4 py-1.5 rounded-full border border-orange-500/10">
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              {format(new Date(event.date), 'MMMM d, yyyy')}
             </div>
 
             <h3
               onClick={() => setSelectedEventForDetails(event)}
-              className="text-xl font-bold text-white mb-2 font-outfit group-hover:text-indigo-400 transition-colors cursor-pointer hover:underline decoration-indigo-500/50 underline-offset-4"
+              className="text-2xl font-black text-white mb-3 font-outfit decoration-orange-500/50 decoration-2 underline-offset-8 cursor-pointer group-hover:text-orange-300 group-hover:translate-x-1 transition-all"
             >
               {event.title}
             </h3>
-            <div className="flex items-center gap-2 text-slate-500 text-xs mb-4">
-              <MapPin className="w-3.5 h-3.5 text-indigo-500/70" />
-              {renderLocation(event.location, event.locationType)}
+
+            <div className="flex items-center gap-2 text-slate-400 text-xs mb-5 font-medium opacity-80">
+              <MapPin className="w-4 h-4 text-orange-400" />
+              {renderLocation(event.location, event.locationType, "truncate max-w-[200px]")}
             </div>
-            <p className="text-slate-400 text-sm line-clamp-2 mb-6 flex-1 whitespace-pre-line leading-relaxed italic border-l-2 border-indigo-500/20 pl-3">{event.description}</p>
+
+            <p className="text-slate-400 text-sm line-clamp-2 mb-8 flex-1 leading-relaxed opacity-70 group-hover:opacity-100 transition-opacity">{event.description}</p>
 
             {(!currentUser || currentUser.role === 'attendee') && (
               (() => {
@@ -1942,51 +2102,260 @@ export default function App() {
                 const isClosed = event.isRegistrationOpen === false || now >= startDate;
 
                 return (
-                  <div className="flex flex-col gap-3 mt-auto">
-                    {isLive && (
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-red-500 animate-pulse bg-red-950/30 px-2 py-1 rounded w-fit uppercase">
-                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                        Live Now
-                      </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        if (!currentUser) {
-                          setIsAuthModalOpen(true);
-                        } else if (isRegistered) {
-                          const myReg = registrations.find(r => r.eventId === event.id && r.participantEmail === currentUser.email);
-                          if (myReg) setSelectedRegistrationDetails(myReg);
-                        } else if (!isClosed) {
-                          setSelectedEventForReg(event);
-                        }
-                      }}
-                      disabled={!isRegistered && isClosed}
-                      className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 border shadow-lg shadow-black/20 ${isRegistered
-                        ? 'bg-indigo-900/40 text-indigo-400 border-indigo-500 hover:bg-indigo-900/60 active:scale-95'
-                        : isClosed
-                          ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
-                          : isFull
-                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
-                        }`}
-                    >
+                  <div className="flex flex-col gap-4 mt-auto">
+                    <div className="flex items-center justify-between">
+                      {isLive && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-black text-rose-500 animate-pulse bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-full uppercase tracking-wider">
+                          <div className="w-1.5 h-1.5 bg-rose-500 rounded-full shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
+                          Live Now
+                        </div>
+                      )}
+                      {isFull && !isRegistered && !isPastBadge && (
+                        <div className="text-[10px] font-black text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full uppercase tracking-wider">
+                          Event Full
+                        </div>
+                      )}
+                      {isPastBadge && (
+                        <div className="text-[10px] font-black text-slate-500 bg-slate-500/10 border border-slate-500/20 px-3 py-1 rounded-full uppercase tracking-wider">
+                          Inactive
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
                       {isRegistered ? (
-                        <>
-                          <CheckCircle className="w-4 h-4" /> View Registration
-                        </>
-                      ) : isClosed ? (
-                        <>
-                          <XCircle className="w-4 h-4" /> {isPastBadge ? 'Event Ended' : 'Registration Closed'}
-                        </>
-                      ) : isFull ? (
-                        <>
-                          <Clock className="w-4 h-4" /> Join Waitlist
-                        </>
-                      ) : 'Register Now'}
-                    </button>
+                        <button
+                          onClick={() => {
+                            const reg = registrations.find(r => r.eventId === event.id && r.participantEmail === currentUser?.email);
+                            if (reg) setSelectedRegistrationDetails(reg);
+                          }}
+                          className="flex-1 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold font-outfit py-3 rounded-2xl transition-all flex items-center justify-center gap-2 group/btn"
+                        >
+                          <CheckCircle className="w-5 h-5 text-orange-400 group-hover/btn:scale-110 transition-transform" />
+                          View Registration
+                        </button>
+                      ) : (
+                        currentUser ? (
+                          <button
+                            disabled={isFull || isClosed}
+                            onClick={() => setSelectedEventForReg(event)}
+                            className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold font-outfit py-3 rounded-2xl transition-all shadow-lg shadow-orange-600/20 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed"
+                          >
+                            {isFull ? 'Waitlisted' : (isClosed ? 'Registration Closed' : 'Secure Your Spot')}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setIsAuthModalOpen(true)}
+                            className="flex-1 bg-white/5 border border-white/10 hover:border-orange-500/50 hover:bg-orange-500/5 text-white font-bold font-outfit py-3 rounded-2xl transition-all flex items-center justify-center gap-2 group/btn"
+                          >
+                            Sign In to Register
+                            <ChevronRight className="w-4 h-4 text-orange-400 group-hover/btn:translate-x-1 transition-transform" />
+                          </button>
+                        )
+                      )}
+
+                      <button
+                        onClick={() => setSelectedEventForDetails(event)}
+                        className="p-3 bg-white/5 border border-white/10 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all"
+                        title="View Details"
+                      >
+                        <ExternalLink className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
-                )
+                );
               })()
+            )}
+
+            {currentUser?.role === 'organizer' && (
+              <div className="mt-auto pt-6 border-t border-white/5 flex gap-2">
+                <button
+                  onClick={() => {
+                    setOrganizerSelectedEventId(event.id);
+                    setOrganizerView('events');
+                    setActiveTab('organizer');
+                  }}
+                  className="flex-1 bg-orange-600/10 text-orange-400 font-bold font-outfit py-3 rounded-2xl border border-orange-500/20 hover:bg-orange-600 hover:text-white transition-all shadow-sm"
+                >
+                  Manage
+                </button>
+                <button
+                  onClick={() => setSelectedEventForDetails(event)}
+                  className="px-4 bg-white/5 text-slate-400 rounded-2xl border border-white/10 hover:bg-white/10 transition-all"
+                >
+                  <Edit className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      );
+    };
+
+    return (
+      <div className="animate-in fade-in duration-700">
+        {/* Modern Premium Hero Section */}
+        {activeTab === 'browse' && !currentUser && (
+          <div className="relative overflow-hidden mb-8 sm:mb-16 pt-16 pb-20 md:pt-12 md:pb-24 transition-all">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[1000px] bg-orange-600/10 blur-[120px] rounded-full pointer-events-none -z-10 animate-pulse"></div>
+            <div className="absolute -top-20 -right-20 w-80 h-80 bg-amber-600/10 blur-[100px] rounded-full pointer-events-none -z-10"></div>
+
+            <div className="max-w-4xl mx-auto text-center px-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] mb-8 animate-float">
+                <Sparkles className="w-4 h-4" />
+                Experience the Extraordinary
+              </div>
+              <h1 className="text-4xl sm:text-5xl md:text-7xl font-black font-outfit text-white mb-8 tracking-tighter leading-[1.1] md:leading-[0.9]">
+                Where Every Moment <br className="hidden sm:block" />
+                <span className="text-gradient">Becomes a Legacy</span>
+              </h1>
+              <p className="text-base sm:text-xl text-slate-400 mb-10 md:mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
+                Connect with the world's most exclusive tech, design, and cultural events. Your next core memory is just a click away.
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="w-full sm:w-auto px-10 py-5 bg-gradient-to-r from-orange-600 to-amber-600 text-white rounded-3xl text-sm md:text-lg font-black font-outfit hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-orange-600/40 uppercase tracking-widest"
+                >
+                  Start Your Journey
+                </button>
+                <div className="flex items-center gap-2 text-slate-500 font-bold text-xs sm:text-sm">
+                  <Users className="w-5 h-5" />
+                  Join 10,000+ members
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 md:mb-12">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>
+                <span className="text-[10px] font-black text-orange-400 uppercase tracking-[0.4em]">Satellite Feed</span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-black font-outfit text-white tracking-tight">
+                {currentUser?.role === 'organizer' ? 'Hosted Nexus' : 'Upcoming Experiences'}
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar pb-2 sm:pb-0">
+              <div className="flex p-1.5 bg-white/5 rounded-2xl border border-white/5 whitespace-nowrap">
+                <button className="px-4 py-2 sm:px-6 bg-orange-600 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-all">All</button>
+                <button className="px-4 py-2 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all hover:text-white">Tech</button>
+                <button className="px-4 py-2 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all hover:text-white">Design</button>
+              </div>
+            </div>
+          </div>
+
+          {!dataLoading && upcomingEvents.length === 0 ? (
+            <div className="text-center py-32 glass-card rounded-[40px] border-dashed border-2 border-white/5">
+              <div className="w-24 h-24 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Calendar className="w-12 h-12 text-orange-500 opacity-50" />
+              </div>
+              <h3 className="text-2xl font-black font-outfit text-white mb-2">No upcoming events yet</h3>
+              <p className="text-slate-400 max-w-xs mx-auto mb-8">Stay tuned! We're preparing incredible experiences for you.</p>
+              {currentUser?.role === 'organizer' && (
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="bg-orange-600 text-white px-10 py-5 rounded-[24px] font-black font-outfit hover:bg-orange-500 transition-all uppercase tracking-widest shadow-2xl shadow-orange-600/40 hyper-glow active:scale-95 translate-y-0 hover:-translate-y-1"
+                >
+                  Create Your First Event
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
+              {dataLoading ? (
+                Array(6).fill(0).map((_, i) => <EventCardSkeleton key={i} />)
+              ) : (
+                upcomingEvents.map((event, idx) => renderEventCard(event, idx))
+              )}
+            </div>
+          )}
+
+          {pastEvents.length > 0 && (
+            <div className="mt-32">
+              <div className="flex items-center gap-6 mb-12">
+                <h3 className="text-3xl font-black font-outfit text-white tracking-tight whitespace-nowrap">Past Memories</h3>
+                <div className="flex-1 h-px bg-white/5"></div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+                {pastEvents.map((event, idx) => renderEventCard(event, idx + upcomingEvents.length))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMyTickets = () => {
+    if (!currentUser) return null;
+
+    // Filter registrations for this logged in user
+    const myRegs = registrations.filter(r => r.participantEmail === currentUser.email);
+
+    // Split into Active and Past
+    const activeRegs = myRegs.filter(reg => {
+      const event = events.find(e => e.id === reg.eventId);
+      return event && !isPastEvent(event) && (reg.status === RegistrationStatus.APPROVED || reg.status === RegistrationStatus.PENDING || reg.status === RegistrationStatus.WAITLISTED);
+    });
+
+    const pastRegs = myRegs.filter(reg => {
+      const event = events.find(e => e.id === reg.eventId);
+      return event && isPastEvent(event);
+    });
+
+    const activeTicketsCount = activeRegs.filter(r => r.status === RegistrationStatus.APPROVED || r.status === RegistrationStatus.PENDING).length;
+
+    const renderTicketCard = (reg: Registration) => {
+      const event = events.find(e => e.id === reg.eventId);
+      if (!event) return null;
+      const isPast = isPastEvent(event);
+
+      return (
+        <div key={reg.id} className={`group glass-card rounded-[32px] p-6 lg:p-8 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden transition-all duration-500 hover:border-orange-500/30 ${isPast ? 'opacity-60 grayscale' : ''}`}>
+          <div className="absolute top-0 right-0 w-32 h-64 bg-orange-600/5 -rotate-45 translate-x-16 -translate-y-16 pointer-events-none"></div>
+
+          <div className="w-full md:w-32 h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/5 shadow-2xl">
+            <LazyEventImage eventId={event.id} initialSrc={event.imageUrl} alt={event.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+          </div>
+
+          <div className="flex-1 w-full text-center md:text-left">
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest opacity-60">ID: {reg.id.slice(0, 8)}</span>
+            <h3 className="text-2xl font-black text-white mt-1 mb-3 font-outfit line-clamp-1 group-hover:text-orange-400 transition-colors uppercase tracking-tight">{event.title}</h3>
+            <div className="flex flex-wrap justify-center md:justify-start items-center gap-x-6 gap-y-3 mt-4 text-slate-400 text-sm font-medium">
+              <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-orange-400" /> {format(new Date(event.date), 'MMMM d, yyyy')}</div>
+              <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-orange-400" /> {renderLocation(event.location, event.locationType, "truncate max-w-[150px]")}</div>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center md:items-end gap-4 min-w-[200px] w-full md:w-auto">
+            <Badge status={reg.status} />
+            {!isPast && (reg.status === RegistrationStatus.APPROVED || reg.status === RegistrationStatus.PENDING) && (
+              <button
+                onClick={() => setSelectedTicket(reg)}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white border border-transparent px-8 py-3.5 rounded-2xl text-xs font-black font-outfit transition-all uppercase tracking-widest shadow-xl shadow-orange-600/20 active:scale-95 flex items-center justify-center gap-3"
+              >
+                <QrCode className="w-4 h-4" /> View Digital Ticket
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedEventForDetails(event)}
+              className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.3em] transition-colors"
+            >
+              Event Details
+            </button>
+            {!isPast && (
+              <button
+                onClick={() => handleCancelRegistration(reg.id)}
+                className="text-[10px] font-black text-rose-500 hover:text-rose-400 uppercase tracking-[0.3em] transition-colors flex items-center gap-2 group/cancel mt-2"
+              >
+                <Trash2 className="w-3 h-3 group-hover/cancel:scale-110 transition-transform" />
+                Cancel Registration
+              </button>
             )}
           </div>
         </div>
@@ -1994,75 +2363,59 @@ export default function App() {
     };
 
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in duration-500">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 gap-4">
+      <div className="max-w-4xl mx-auto px-4 py-10 md:py-16 animate-in slide-in-from-bottom-4 duration-700">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div>
-            <h2 className="text-3xl font-bold text-white font-outfit tracking-tight">
-              {currentUser?.role === 'organizer' && activeTab === 'browse' ? 'My Hosted Events' : 'Explore Experiences'}
-            </h2>
-            <p className="text-slate-400 mt-2 text-lg">Discover and join amazing events happening near you.</p>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>
+              <span className="text-[10px] font-black text-orange-400 uppercase tracking-[0.4em]">Personal Node</span>
+            </div>
+            <h2 className="text-3xl md:text-4xl font-black font-outfit text-white tracking-tight">Your Passport</h2>
+            <p className="text-slate-400 text-sm font-medium opacity-80 mt-1">Manage your upcoming experiences and digital tickets.</p>
           </div>
-          {currentUser?.role === 'organizer' && (
-            <button
-              onClick={() => { resetEventForm(); setIsCreateModalOpen(true); }}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
-            >
-              <Plus className="w-5 h-5" /> Create Event
-            </button>
-          )}
+          <div className="bg-orange-600/10 border border-orange-500/20 px-6 py-3 rounded-2xl flex items-center gap-3 w-fit">
+            <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+            <span className="text-xs font-black text-orange-400 uppercase tracking-widest">{activeTicketsCount} Active {activeTicketsCount !== 1 ? 'Permits' : 'Permit'}</span>
+          </div>
         </div>
 
         {dataLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[1, 2, 3, 4, 5, 6].map(i => <EventCardSkeleton key={i} />)}
+          <div className="space-y-6">
+            {[1, 2, 3].map(i => <TicketSkeleton key={i} />)}
+          </div>
+        ) : myRegs.length === 0 ? (
+          <div className="text-center py-24 glass-card rounded-[40px] border-dashed border-2 border-white/5">
+            <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <QrCode className="w-10 h-10 text-slate-600" />
+            </div>
+            <h3 className="text-2xl font-black font-outfit text-white mb-2">No tickets yet</h3>
+            <p className="text-slate-400 mb-8 max-w-xs mx-auto">Your journey begins when you register for your first event.</p>
+            <button
+              onClick={() => setActiveTab('browse')}
+              className="bg-orange-600 text-white px-10 py-4 rounded-2xl font-black font-outfit hover:bg-orange-700 transition-all uppercase tracking-widest shadow-xl shadow-orange-600/20"
+            >
+              Explore Events
+            </button>
           </div>
         ) : (
           <div className="space-y-16">
-            {/* Recommendations Section */}
-            {currentUser?.role === 'attendee' && (recommendedEvents.length > 0 || areRecommendationsLoading) && (
-              <div className="mb-8">
-                <div className="flex items-center gap-2 mb-6">
-                  <Sparkles className="w-5 h-5 text-indigo-400" />
-                  <h3 className="text-xl font-bold text-white font-outfit">Recommended for You</h3>
+            {activeRegs.length > 0 && (
+              <div className="space-y-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Upcoming Expeditions</h3>
+                  <div className="flex-1 h-px bg-white/5"></div>
                 </div>
-                {areRecommendationsLoading ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {[1, 2, 3].map(i => <EventCardSkeleton key={`rec-kel-${i}`} />)}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-6 rounded-2xl bg-indigo-900/10 border border-indigo-500/20">
-                    {recommendedEvents.map(renderEventCard)}
-                  </div>
-                )}
-              </div>
-            )}
-            {upcomingEvents.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {upcomingEvents.map(renderEventCard)}
+                {activeRegs.map(renderTicketCard)}
               </div>
             )}
 
-            {pastEvents.length > 0 && (
-              <div className="space-y-8">
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                    <div className="w-full border-t border-slate-800"></div>
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-slate-950 px-4 text-sm font-bold text-slate-500 uppercase tracking-widest font-outfit">Past Events</span>
-                  </div>
+            {pastRegs.length > 0 && (
+              <div className="space-y-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Journey Log</h3>
+                  <div className="flex-1 h-px bg-white/5"></div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {pastEvents.map(renderEventCard)}
-                </div>
-              </div>
-            )}
-
-            {visibleEvents.length === 0 && (
-              <div className="py-24 text-center bg-slate-900/50 rounded-3xl border-2 border-dashed border-slate-800 w-full animate-in zoom-in duration-500">
-                <Calendar className="w-16 h-16 text-slate-700 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-white mb-2 font-outfit">No events found</h3>
-                <p className="text-slate-400">There are no events available at this time.</p>
+                {pastRegs.map(renderTicketCard)}
               </div>
             )}
           </div>
@@ -2070,116 +2423,6 @@ export default function App() {
       </div>
     );
   };
-
-  const renderMyTickets = () => {
-    // Filter registrations for this logged in user
-    const myRegs = registrations.filter(r => r.participantEmail === currentUser.email);
-
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <h2 className="text-2xl font-bold text-white mb-6">My Tickets</h2>
-        {dataLoading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map(i => <TicketSkeleton key={i} />)}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {myRegs.map(reg => {
-              const event = events.find(e => e.id === reg.eventId);
-              if (!event) return null;
-
-              return (
-                <div key={reg.id} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center gap-6 shadow-sm">
-                  <div className="flex-1 w-full md:w-auto">
-                    <div className="flex justify-between items-center md:items-start mb-2 md:mb-0">
-                      <div className="flex items-center gap-2">
-                        <Badge status={reg.status} />
-                        {(() => {
-                          const now = new Date();
-                          const startDate = new Date(event.date);
-                          const endDate = event.endDate ? new Date(event.endDate) : new Date(startDate.getTime() + 3600000);
-                          if (now >= startDate && now <= endDate) {
-                            return <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-500 animate-pulse bg-red-950/30 px-1.5 py-0.5 rounded border border-red-900/40 uppercase">LIVE</span>;
-                          }
-                          return null;
-                        })()}
-                      </div>
-                      <span className="md:hidden text-xs text-slate-400">ID: {reg.id.slice(0, 8)}...</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-white mt-2">{event.title}</h3>
-                    <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 text-slate-400 text-sm">
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(new Date(event.date), 'MMM d, yyyy')}</span>
-                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {renderLocation(event.location, event.locationType)}</span>
-                      <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${event.locationType === 'online' ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-800' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
-                        {event.locationType === 'online' ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
-                    <div className="hidden md:block mt-2 text-xs text-slate-500">ID: {reg.id.slice(0, 8)}...</div>
-
-
-                  </div>
-
-                  {reg.status !== RegistrationStatus.APPROVED && (
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <div className="flex-1 px-5 py-3 text-slate-500 text-sm font-medium text-center bg-slate-950 rounded-xl">
-                        {reg.status === RegistrationStatus.PENDING ? 'Waiting for approval' : reg.status === RegistrationStatus.WAITLISTED ? 'On Waitlist' : 'Registration Rejected'}
-                      </div>
-                      <button
-                        onClick={async () => {
-                          if (confirm('Are you sure you want to cancel your request?')) {
-                            await deleteRegistration(reg.id);
-                            addToast('Registration cancelled', 'info');
-                            loadData();
-                          }
-                        }}
-                        className="p-3 bg-red-900/30 text-red-500 rounded-xl hover:bg-red-900/50 transition-colors border border-red-800"
-                        title="Cancel Request"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {reg.status === RegistrationStatus.APPROVED && (
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <button
-                        onClick={() => setSelectedTicket(reg)}
-                        className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white px-5 py-3 rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-900/20"
-                      >
-                        <QrCode className="w-4 h-4" /> View Ticket
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (confirm('Are you sure you want to cancel your ticket?')) {
-                            await deleteRegistration(reg.id);
-                            addToast('Ticket cancelled', 'info');
-                            loadData();
-                          }
-                        }}
-                        className="p-3 bg-red-900/30 text-red-500 rounded-xl hover:bg-red-900/50 transition-colors border border-red-800"
-                        title="Cancel Ticket"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {myRegs.length === 0 && (
-              <div className="py-12 text-center text-slate-400 bg-slate-900 rounded-2xl border border-dashed border-slate-700">
-                No tickets yet. Go register for some events!
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-
-
-
 
   const renderOrganizer = () => {
     // Only show events created by this organizer OR where they are a collaborator
@@ -2188,41 +2431,40 @@ export default function App() {
     // If no event selected, show Dashboard or List
     if (!organizerSelectedEventId) {
       return (
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 animate-in fade-in duration-700">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
             <div>
-              <h2 className="text-2xl font-bold text-white">Organizer Dashboard</h2>
-              <p className="text-slate-400 text-sm">Manage your events and attendees</p>
+              <h2 className="text-4xl font-black font-outfit text-white tracking-tight">Command Center</h2>
+              <p className="text-slate-400 font-medium opacity-80 mt-1">Orchestrate your experiences and manage your community.</p>
             </div>
-            <div className="flex w-full sm:w-auto gap-2">
+            <div className="flex items-center gap-3 w-full md:w-auto">
               <button
                 onClick={() => { resetEventForm(); setIsCreateModalOpen(true); }}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-indigo-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/5 text-white border border-white/10 px-6 py-3.5 rounded-2xl hover:bg-white/10 font-bold font-outfit transition-all uppercase tracking-wider text-xs"
               >
-                <Plus className="w-4 h-4" /> New Event
+                <Plus className="w-4 h-4 text-orange-400" /> New Venture
               </button>
               <button
                 onClick={() => setIsScannerOpen(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-900/20 transition-all active:scale-95"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 text-white px-8 py-3.5 rounded-2xl hover:bg-orange-700 shadow-xl shadow-orange-600/30 transition-all active:scale-95 font-black font-outfit uppercase tracking-wider text-xs"
               >
-                <ScanLine className="w-4 h-4" /> Scan
+                <ScanLine className="w-4 h-4" /> Scan Entrance
               </button>
             </div>
           </div>
 
-          {/* Organizer Tabs */}
-          <div className="flex bg-slate-800/50 p-1 rounded-xl mb-6 w-fit">
+          <div className="inline-flex p-1.5 bg-white/5 rounded-2xl border border-white/5 mb-10">
             <button
               onClick={() => setOrganizerView('overview')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${organizerView === 'overview' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${organizerView === 'overview' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-400 hover:text-white'}`}
             >
-              Overview
+              Intelligence
             </button>
             <button
               onClick={() => setOrganizerView('events')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${organizerView === 'events' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${organizerView === 'events' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-400 hover:text-white'}`}
             >
-              My Events
+              Expeditions
             </button>
           </div>
 
@@ -2233,98 +2475,87 @@ export default function App() {
             />
           ) : (
             dataLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4].map(i => <ListRowSkeleton key={i} />)}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {[1, 2, 3, 4, 5, 6].map(i => <EventCardSkeleton key={i} />)}
               </div>
             ) : (
-              <>
-                {/* Mobile View: Cards */}
-                <div className="block md:hidden space-y-4">
-                  {myEvents.map(event => {
-                    const eventRegs = registrations.filter(r => r.eventId === event.id);
-                    const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
-                    return (
-                      <div key={event.id} className="bg-slate-900 p-5 rounded-xl border border-slate-800 shadow-sm active:scale-[0.98] transition-all" onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}>
-                        <div className="flex justify-between items-start mb-3">
-                          <h3 className="font-semibold text-white line-clamp-1">{event.title}</h3>
-                          <ChevronRight className="w-5 h-5 text-slate-400" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {myEvents.map(event => {
+                  const eventRegs = registrations.filter(r => r.eventId === event.id);
+                  const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
+                  return (
+                    <div
+                      key={event.id}
+                      onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}
+                      className="group glass-card rounded-3xl p-6 cursor-pointer border border-white/5 hover:border-orange-500/30 transition-all duration-500 flex flex-col h-full"
+                    >
+                      <div className="flex justify-between items-start mb-6">
+                        <div className="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center border border-orange-500/20 group-hover:scale-110 transition-transform duration-500">
+                          <Calendar className="w-6 h-6 text-orange-400" />
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
-                          <Calendar className="w-4 h-4" />
-                          {format(new Date(event.date), 'MMM d, yyyy')}
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded-md border border-slate-700">
-                            {eventRegs.length} / {event.capacity} registered
-                          </span>
-                          {pendingCount > 0 && (
-                            <span className="bg-amber-900/40 text-amber-400 text-xs px-2 py-1 rounded-full font-medium border border-amber-800">
-                              {pendingCount} pending
-                            </span>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest opacity-60">Status</span>
+                          {isPastEvent(event) ? (
+                            <span className="text-xs font-bold text-slate-400 mt-1">Inactive</span>
+                          ) : (
+                            <span className="text-xs font-bold text-emerald-400 mt-1">Active</span>
                           )}
                         </div>
                       </div>
-                    );
-                  })}
-                  {myEvents.length === 0 && (
-                    <div className="text-center text-slate-400 py-8 bg-slate-900 rounded-xl border border-dashed border-slate-700">
-                      No events created yet.
+
+                      <h3 className="text-xl font-black font-outfit text-white mb-2 tracking-tight group-hover:text-orange-400 transition-colors line-clamp-1">{event.title}</h3>
+                      <div className="flex items-center gap-2 text-slate-400 text-xs font-medium opacity-80 mb-6">
+                        <div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-orange-400" /> {format(new Date(event.date), 'MMM d, h:mm a')}</div>
+                      </div>
+
+                      <div className="mt-auto space-y-4">
+                        <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                          <div className="flex justify-between items-end mb-2">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Enlisted</span>
+                            <span className="text-sm font-black font-outfit text-white">{eventRegs.length} / {event.capacity}</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-orange-500 to-amber-600 transition-all duration-1000"
+                              style={{ width: `${Math.min(100, (eventRegs.length / event.capacity) * 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          {pendingCount > 0 ? (
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[10px] font-black text-amber-500 uppercase tracking-widest">
+                              <AlertCircle className="w-3 h-3" /> {pendingCount} Pending Approval
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                              <CheckSquare className="w-3 h-3" /> Fully Vetted
+                            </div>
+                          )}
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-orange-600 transition-colors">
+                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-white" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                {/* Desktop View: Table */}
-                <div className="hidden md:block bg-slate-900 rounded-xl shadow-sm border border-slate-800 overflow-hidden">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-800 border-b border-slate-800">
-                      <tr>
-                        <th className="px-6 py-4 font-semibold text-slate-300">Event Name</th>
-                        <th className="px-6 py-4 font-semibold text-slate-300">Date</th>
-                        <th className="px-6 py-4 font-semibold text-slate-300">Registrations</th>
-                        <th className="px-6 py-4 font-semibold text-slate-300">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800">
-                      {myEvents.map(event => {
-                        const eventRegs = registrations.filter(r => r.eventId === event.id);
-                        const pendingCount = eventRegs.filter(r => r.status === RegistrationStatus.PENDING).length;
-
-                        return (
-                          <tr key={event.id} className="hover:bg-slate-800/50">
-                            <td className="px-6 py-4 font-medium text-slate-200">{event.title}</td>
-                            <td className="px-6 py-4 text-slate-400">{format(new Date(event.date), 'MMM d, yyyy')}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-300">{eventRegs.length} / {event.capacity}</span>
-                                {pendingCount > 0 && (
-                                  <span className="bg-amber-900/50 text-amber-200 text-xs px-2 py-0.5 rounded-full border border-amber-800">
-                                    {pendingCount} pending
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <button
-                                onClick={() => { setOrganizerSelectedEventId(event.id); setStatusFilter('ALL'); setAttendanceFilter('ALL'); }}
-                                className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-                              >
-                                Manage
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {myEvents.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
-                            You haven't created any events yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+                  );
+                })}
+                {myEvents.length === 0 && (
+                  <div className="text-center py-24 glass-card rounded-[40px] border-dashed border-2 border-white/5 col-span-full">
+                    <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Calendar className="w-10 h-10 text-slate-600" />
+                    </div>
+                    <h3 className="text-2xl font-black font-outfit text-white mb-2">No expeditions yet</h3>
+                    <p className="text-slate-400 mb-8 max-w-xs mx-auto">Launch your first event and begin your legacy.</p>
+                    <button
+                      onClick={() => { resetEventForm(); setIsCreateModalOpen(true); }}
+                      className="bg-orange-600 text-white px-10 py-4 rounded-2xl font-black font-outfit hover:bg-orange-700 transition-all uppercase tracking-widest shadow-xl shadow-orange-600/20"
+                    >
+                      Create Your First Event
+                    </button>
+                  </div>
+                )}
+              </div>
             )
           )}
         </div>
@@ -2360,37 +2591,17 @@ export default function App() {
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
             <button
               onClick={() => event && handleEditClick(event)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-indigo-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-orange-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
             >
               <Edit className="w-4 h-4" /> Edit Event
             </button>
             <button
               onClick={() => event && handleSendReminders(event)}
               disabled={isSendingReminders}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-indigo-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium disabled:opacity-50 transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-orange-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium disabled:opacity-50 transition-colors"
             >
               {isSendingReminders ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
               Send Reminders
-            </button>
-            <button
-              onClick={async () => {
-                if (!event) return;
-                const newStatus = event.isRegistrationOpen === false ? true : false;
-                // Assuming updateEvent partial update works or we pass full object
-                // We need to pass full object to saveEvent but updateEvent usually takes partial if implemented that way or we merge local
-                // My storageService updateEvent takes generic object.
-                const updated = { ...event, isRegistrationOpen: newStatus };
-                await updateEvent(updated);
-                await loadData(); // Refresh to see changes
-                addToast(`Registration ${newStatus ? 'Opened' : 'Closed'}`, 'success');
-              }}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 border px-4 py-2 rounded-lg font-medium transition-colors ${event?.isRegistrationOpen === false
-                ? 'bg-green-900/40 text-green-400 border-green-800 hover:bg-green-900/60' // Closed -> Click to Open
-                : 'bg-red-900/40 text-red-400 border-red-800 hover:bg-red-900/60' // Open -> Click to Close
-                }`}
-            >
-              {event?.isRegistrationOpen === false ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-              {event?.isRegistrationOpen === false ? 'Open Registration' : 'Close Registration'}
             </button>
             <button
               onClick={async () => {
@@ -2410,14 +2621,20 @@ export default function App() {
               <Trash2 className="w-4 h-4" /> Delete Event
             </button>
             <button
+              onClick={() => setIsAnnouncementModalOpen(true)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-orange-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+            >
+              <Send className="w-4 h-4" /> Broadcast
+            </button>
+            <button
               onClick={() => event && handleExportCSV(event)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-indigo-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-800 text-orange-400 border border-slate-700 px-4 py-2 rounded-lg hover:bg-slate-700 font-medium transition-colors"
             >
               <Download className="w-4 h-4" /> Export CSV
             </button>
             <button
               onClick={() => setIsScannerOpen(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-900/20 transition-all active:scale-95"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 shadow-lg shadow-orange-900/20 transition-all active:scale-95"
             >
               <ScanLine className="w-4 h-4" /> Scan Ticket
             </button>
@@ -2433,7 +2650,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <label className="text-xs text-slate-400 font-medium uppercase">Status</label>
             <select
-              className="bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none appearance-none pr-8 cursor-pointer hover:border-slate-600"
+              className="bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg focus:ring-orange-500 focus:border-orange-500 block p-2 outline-none appearance-none pr-8 cursor-pointer hover:border-slate-600"
               style={{ backgroundImage: 'url("data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3e%3cpath stroke=\'%2394a3b8\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M6 8l4 4 4-4\'/%3e%3c/svg%3e")', backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em' }}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -2448,7 +2665,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <label className="text-xs text-slate-500 font-medium uppercase">Attendance</label>
             <select
-              className="bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none"
+              className="bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-lg focus:ring-orange-500 focus:border-orange-500 block p-2 outline-none"
               value={attendanceFilter}
               onChange={(e) => setAttendanceFilter(e.target.value as any)}
             >
@@ -2465,10 +2682,10 @@ export default function App() {
 
         {/* Bulk Actions Bar */}
         {selectedRegistrationIds.length > 0 && (
-          <div className="bg-indigo-600/10 border border-indigo-500/30 p-3 rounded-xl mb-6 flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
+          <div className="bg-orange-600/10 border border-orange-500/30 p-3 rounded-xl mb-6 flex items-center justify-between animate-in slide-in-from-top-2 duration-300">
             <div className="flex items-center gap-3">
-              <span className="text-indigo-400 font-bold text-sm px-2 py-1 bg-indigo-900/40 rounded-lg">{selectedRegistrationIds.length}</span>
-              <span className="text-indigo-200 text-sm font-medium">Selected</span>
+              <span className="text-orange-400 font-bold text-sm px-2 py-1 bg-orange-900/40 rounded-lg">{selectedRegistrationIds.length}</span>
+              <span className="text-orange-200 text-sm font-medium">Selected</span>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -2564,7 +2781,7 @@ export default function App() {
                     {reg.status === RegistrationStatus.APPROVED && !reg.attended && (
                       <button
                         onClick={() => handleManualAttendance(reg.id)}
-                        className="px-3 py-1.5 bg-indigo-900/40 text-indigo-400 text-xs font-medium rounded-lg border border-indigo-800 hover:bg-indigo-900/60 transition-colors"
+                        className="px-3 py-1.5 bg-orange-900/40 text-orange-400 text-xs font-medium rounded-lg border border-orange-800 hover:bg-orange-900/60 transition-colors"
                       >
                         Mark Present
                       </button>
@@ -2595,7 +2812,7 @@ export default function App() {
                             setSelectedRegistrationIds([]);
                           }
                         }}
-                        className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-orange-600 focus:ring-orange-500 focus:ring-offset-slate-900"
                       />
                     </th>
                     <th className="px-6 py-4 font-semibold text-slate-300">Participant</th>
@@ -2608,7 +2825,7 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {eventRegs.map(reg => (
-                    <tr key={reg.id} className={`hover:bg-slate-800/50 transition-colors ${selectedRegistrationIds.includes(reg.id) ? 'bg-indigo-900/10' : ''}`}>
+                    <tr key={reg.id} className={`hover:bg-slate-800/50 transition-colors ${selectedRegistrationIds.includes(reg.id) ? 'bg-orange-900/10' : ''}`}>
                       <td className="px-6 py-4">
                         <input
                           type="checkbox"
@@ -2620,16 +2837,16 @@ export default function App() {
                               setSelectedRegistrationIds(prev => prev.filter(id => id !== reg.id));
                             }
                           }}
-                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900"
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-orange-600 focus:ring-orange-500 focus:ring-offset-slate-900"
                         />
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-medium text-slate-200">{reg.participantName}</div>
                         {reg.participationType === 'team' && (
-                          <div className="text-[10px] text-indigo-400 mt-0.5 flex items-center gap-1.5 font-semibold">
+                          <div className="text-[10px] text-orange-400 mt-0.5 flex items-center gap-1.5 font-semibold">
                             <span>{reg.teamName}</span>
                             <span className="text-slate-600 font-normal">|</span>
-                            <span className="font-mono bg-indigo-500/10 px-1 rounded border border-indigo-500/20">
+                            <span className="font-mono bg-orange-500/10 px-1 rounded border border-orange-500/20">
                               {teams.find(t => t.id === reg.teamId)?.inviteCode || 'N/A'}
                             </span>
                           </div>
@@ -2671,7 +2888,7 @@ export default function App() {
                         {reg.status === RegistrationStatus.APPROVED && !reg.attended && (
                           <button
                             onClick={() => handleManualAttendance(reg.id)}
-                            className="text-indigo-400 hover:text-indigo-300 text-sm font-medium hover:underline mr-2"
+                            className="text-orange-400 hover:text-orange-300 text-sm font-medium hover:underline mr-2"
                           >
                             Mark Present
                           </button>
@@ -2712,6 +2929,7 @@ export default function App() {
       </main>
 
       {renderAuthModal()}
+      <LiquidChrome />
 
       {/* --- MODALS --- */}
 
@@ -2731,7 +2949,7 @@ export default function App() {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2 font-outfit">Event Image</label>
                   <div className="flex flex-col sm:flex-row items-center gap-4">
-                    <div className="relative w-full sm:w-48 h-40 sm:h-32 bg-slate-950 rounded-xl border-2 border-dashed border-slate-700 flex items-center justify-center overflow-hidden group hover:border-indigo-500/50 transition-colors">
+                    <div className="relative w-full sm:w-48 h-40 sm:h-32 bg-slate-950 rounded-xl border-2 border-dashed border-slate-700 flex items-center justify-center overflow-hidden group hover:border-orange-500/50 transition-colors">
                       {newEvent.imageUrl ? (
                         <>
                           <img src={newEvent.imageUrl} alt="Preview" className="w-full h-full object-cover" />
@@ -2772,7 +2990,7 @@ export default function App() {
                   <input
                     required
                     type="text"
-                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
                     value={newEvent.title}
                     onChange={e => setNewEvent({ ...newEvent, title: e.target.value })}
                     placeholder="e.g. Summer Tech Gala"
@@ -2785,7 +3003,7 @@ export default function App() {
                     <input
                       required
                       type="datetime-local"
-                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none dark-calendar"
+                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none dark-calendar"
                       value={newEvent.date}
                       onChange={e => setNewEvent({ ...newEvent, date: e.target.value })}
                     />
@@ -2795,7 +3013,7 @@ export default function App() {
                     <input
                       required
                       type="datetime-local"
-                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none dark-calendar"
+                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none dark-calendar"
                       value={newEvent.endDate}
                       onChange={e => setNewEvent({ ...newEvent, endDate: e.target.value })}
                     />
@@ -2809,7 +3027,7 @@ export default function App() {
                         type="button"
                         onClick={() => setNewEvent({ ...newEvent, locationType: 'offline' })}
                         className={`py-2 px-4 rounded-lg border text-sm font-medium transition-all ${newEvent.locationType === 'offline'
-                          ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20'
+                          ? 'bg-orange-900/40 border-orange-500 text-orange-400 shadow-lg shadow-orange-900/20'
                           : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-slate-600 hover:bg-slate-900'
                           }`}
                       >
@@ -2819,7 +3037,7 @@ export default function App() {
                         type="button"
                         onClick={() => setNewEvent({ ...newEvent, locationType: 'online' })}
                         className={`py-2 px-4 rounded-lg border text-sm font-medium transition-all ${newEvent.locationType === 'online'
-                          ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20'
+                          ? 'bg-orange-900/40 border-orange-500 text-orange-400 shadow-lg shadow-orange-900/20'
                           : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-slate-600 hover:bg-slate-900'
                           }`}
                       >
@@ -2833,7 +3051,7 @@ export default function App() {
                     <input
                       required
                       type="text"
-                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none"
                       value={newEvent.location}
                       onChange={e => setNewEvent({ ...newEvent, location: e.target.value })}
                       placeholder={newEvent.locationType === 'online' ? 'Zoom, Google Meet, etc.' : 'City or Venue'}
@@ -2847,7 +3065,7 @@ export default function App() {
                     required
                     type="number"
                     min="1"
-                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                     value={newEvent.capacity}
                     onChange={e => setNewEvent({ ...newEvent, capacity: e.target.value })}
                     placeholder="Max attendees"
@@ -2863,7 +3081,7 @@ export default function App() {
                         type="button"
                         onClick={() => setNewEvent({ ...newEvent, participationMode: mode as ParticipationMode })}
                         className={`py-2 px-2 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all ${newEvent.participationMode === mode
-                          ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20'
+                          ? 'bg-orange-900/40 border-orange-500 text-orange-400 shadow-lg shadow-orange-900/20'
                           : 'bg-slate-950 border-slate-700 text-slate-500 hover:border-slate-600'
                           }`}
                       >
@@ -2880,7 +3098,7 @@ export default function App() {
                       required
                       type="number"
                       min="2"
-                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                       value={newEvent.maxTeamSize}
                       onChange={e => setNewEvent({ ...newEvent, maxTeamSize: e.target.value })}
                       placeholder="e.g. 5"
@@ -2903,7 +3121,7 @@ export default function App() {
                         };
                         setNewEvent(prev => ({ ...prev, customQuestions: [...prev.customQuestions, newQ] }));
                       }}
-                      className="text-xs bg-indigo-900/40 text-indigo-400 px-2 py-1 rounded-md hover:bg-indigo-900/60 font-medium"
+                      className="text-xs bg-orange-900/40 text-orange-400 px-2 py-1 rounded-md hover:bg-orange-900/60 font-medium"
                     >
                       + Add Question
                     </button>
@@ -2915,7 +3133,7 @@ export default function App() {
                         <div className="flex gap-2 mb-2">
                           <input
                             type="text"
-                            className="flex-1 px-3 py-1.5 text-sm rounded border border-slate-700 bg-slate-900 text-slate-100 focus:ring-1 focus:ring-indigo-500 outline-none"
+                            className="flex-1 px-3 py-1.5 text-sm rounded border border-slate-700 bg-slate-900 text-slate-100 focus:ring-1 focus:ring-orange-500 outline-none"
                             placeholder="Question text (e.g. Dietary restrictions?)"
                             value={q.question}
                             onChange={e => {
@@ -2962,7 +3180,7 @@ export default function App() {
                                 updated[idx].required = e.target.checked;
                                 setNewEvent({ ...newEvent, customQuestions: updated });
                               }}
-                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                              className="rounded text-orange-600 focus:ring-orange-500"
                             />
                             Required
                           </label>
@@ -2971,7 +3189,7 @@ export default function App() {
                           <div className="mt-2">
                             <input
                               type="text"
-                              className="w-full px-3 py-1.5 text-xs rounded border border-slate-700 bg-slate-900 text-slate-100 focus:ring-1 focus:ring-indigo-500 outline-none"
+                              className="w-full px-3 py-1.5 text-xs rounded border border-slate-700 bg-slate-900 text-slate-100 focus:ring-1 focus:ring-orange-500 outline-none"
                               placeholder="Options separated by comma (e.g. Red, Blue, Green)"
                               value={q.options?.join(', ') || ''}
                               onChange={e => {
@@ -2995,7 +3213,7 @@ export default function App() {
                   <div className="flex gap-2 mb-3">
                     <input
                       type="email"
-                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none"
                       placeholder="Enter organizer email"
                       value={collaboratorEmailInput}
                       onChange={e => setCollaboratorEmailInput(e.target.value)}
@@ -3012,7 +3230,7 @@ export default function App() {
                         }
                       }}
                       disabled={!collaboratorEmailInput}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Add
                     </button>
@@ -3051,7 +3269,7 @@ export default function App() {
                       type="button"
                       onClick={handleGenerateDescription}
                       disabled={isGeneratingAI}
-                      className="text-xs bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-2 py-1 rounded-md flex items-center gap-1 hover:opacity-90 disabled:opacity-50 transition-all"
+                      className="text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white px-2 py-1 rounded-md flex items-center gap-1 hover:opacity-90 disabled:opacity-50 transition-all"
                     >
                       <Sparkles className="w-3 h-3" />
                       {isGeneratingAI ? 'Generating...' : 'AI Assist'}
@@ -3059,7 +3277,7 @@ export default function App() {
                   </div>
                   <textarea
                     required
-                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none h-32 resize-none"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none h-32 resize-none"
                     value={newEvent.description}
                     onChange={e => setNewEvent({ ...newEvent, description: e.target.value })}
                     placeholder="Describe your event..."
@@ -3069,7 +3287,7 @@ export default function App() {
                 <div className="pt-4">
                   <button
                     type="submit"
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-indigo-900/20"
+                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-orange-900/20"
                   >
                     {isEditMode ? 'Update Event' : 'Publish Event'}
                   </button>
@@ -3082,17 +3300,27 @@ export default function App() {
 
       {/* REGISTER MODAL */}
       {selectedEventForReg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-2xl animate-in fade-in duration-300">
           <div className="bg-slate-900 w-full h-full sm:h-auto sm:max-w-md sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="bg-indigo-600 p-6 text-white relative flex-shrink-0">
-              <button onClick={() => { setSelectedEventForReg(null); setRegistrationAnswers({}); setTeamRegistrationData({ mode: 'individual', subMode: 'create', teamName: '', inviteCode: '' }); }} className="absolute top-4 right-4 text-white/70 hover:text-white p-1">
+            <div className="bg-orange-600 p-6 text-white relative flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center border border-white/30 backdrop-blur-md">
+                  <CheckSquare className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black font-outfit tracking-tight">Permission Protocol</h3>
+                  <p className="text-[10px] text-white/70 font-bold uppercase tracking-widest truncate max-w-[200px]">{selectedEventForReg.title}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setSelectedEventForReg(null); setRegistrationAnswers({}); setTeamRegistrationData({ mode: 'individual', subMode: 'create', teamName: '', inviteCode: '' }); }}
+                className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors"
+              >
                 <XCircle className="w-6 h-6" />
               </button>
-              <h3 className="text-xl font-bold font-outfit">{selectedEventForReg.title}</h3>
-              <p className="text-indigo-200 text-sm mt-1">{format(new Date(selectedEventForReg.date), 'MMMM d, yyyy')}</p>
             </div>
 
-            <form onSubmit={handleRegister} className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+            <form onSubmit={handleRegister} className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar">
               {/* Participation Mode Choice */}
               {selectedEventForReg.participationMode !== 'individual' && selectedEventForReg.maxTeamSize && (
                 <div className="mb-6 space-y-4">
@@ -3107,7 +3335,7 @@ export default function App() {
                           type="button"
                           onClick={() => setTeamRegistrationData(prev => ({ ...prev, mode: m as any }))}
                           className={`py-3 px-4 rounded-xl border text-sm font-bold transition-all ${teamRegistrationData.mode === m
-                            ? 'bg-indigo-900/40 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-900/20 active:scale-95'
+                            ? 'bg-orange-900/40 border-orange-500 text-orange-400 shadow-lg shadow-orange-900/20 active:scale-95'
                             : 'bg-slate-950 border-slate-700 text-slate-500 hover:border-slate-600 active:scale-95'
                             }`}
                         >
@@ -3124,14 +3352,14 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setTeamRegistrationData(prev => ({ ...prev, subMode: 'create' }))}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${teamRegistrationData.subMode === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${teamRegistrationData.subMode === 'create' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
                         >
                           Create Team
                         </button>
                         <button
                           type="button"
                           onClick={() => setTeamRegistrationData(prev => ({ ...prev, subMode: 'join' }))}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${teamRegistrationData.subMode === 'join' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
+                          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${teamRegistrationData.subMode === 'join' ? 'bg-orange-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
                         >
                           Join Team
                         </button>
@@ -3144,7 +3372,7 @@ export default function App() {
                             required
                             type="text"
                             placeholder="My Awesome Team"
-                            className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                             value={teamRegistrationData.teamName}
                             onChange={e => setTeamRegistrationData(prev => ({ ...prev, teamName: e.target.value }))}
                           />
@@ -3156,7 +3384,7 @@ export default function App() {
                             required
                             type="text"
                             placeholder="ABC123"
-                            className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none uppercase transition-all"
+                            className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none uppercase transition-all"
                             value={teamRegistrationData.inviteCode}
                             onChange={e => setTeamRegistrationData(prev => ({ ...prev, inviteCode: e.target.value.toUpperCase() }))}
                           />
@@ -3184,7 +3412,7 @@ export default function App() {
                           type="text"
                           required={q.required}
                           value={registrationAnswers[q.id] || ''}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                           onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                         />
                       )}
@@ -3199,7 +3427,7 @@ export default function App() {
                               required={q.required}
                               checked={registrationAnswers[q.id] === 'Yes'}
                               onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: 'Yes' }))}
-                              className="w-4 h-4 text-indigo-500 focus:ring-indigo-500 bg-slate-950 border-slate-700"
+                              className="w-4 h-4 text-orange-500 focus:ring-orange-500 bg-slate-950 border-slate-700"
                             />
                             Yes
                           </label>
@@ -3211,7 +3439,7 @@ export default function App() {
                               required={q.required}
                               checked={registrationAnswers[q.id] === 'No'}
                               onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: 'No' }))}
-                              className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 bg-slate-950 border-slate-700"
+                              className="w-4 h-4 text-orange-600 focus:ring-orange-500 bg-slate-950 border-slate-700"
                             />
                             No
                           </label>
@@ -3222,7 +3450,7 @@ export default function App() {
                         <select
                           required={q.required}
                           value={registrationAnswers[q.id] || ''}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition-all"
                           onChange={e => setRegistrationAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                         >
                           <option value="" disabled>Select an option</option>
@@ -3247,7 +3475,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={isRegistering}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 font-outfit shadow-lg shadow-indigo-600/20 active:scale-95"
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 font-outfit shadow-lg shadow-orange-600/20 active:scale-95"
                 >
                   {isRegistering ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirm Registration'}
                 </button>
@@ -3257,6 +3485,77 @@ export default function App() {
         </div>
       )
       }
+
+      {/* ANNOUNCEMENT MODAL */}
+      <AnimatePresence>
+        {isAnnouncementModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-slate-900 w-full max-w-lg rounded-[32px] overflow-hidden border border-white/5 shadow-2xl relative"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500"></div>
+
+              <div className="p-8">
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center border border-orange-500/20">
+                      <Send className="w-6 h-6 text-orange-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black font-outfit text-white tracking-tight">Broadcast Intel</h3>
+                      <p className="text-slate-400 text-sm font-medium">Deploy mission-critical updates instantly.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsAnnouncementModalOpen(false)}
+                    className="p-2 hover:bg-white/5 rounded-xl transition-colors text-slate-500 hover:text-white"
+                  >
+                    <XCircle className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Announcement Stream</label>
+                    <textarea
+                      required
+                      className="w-full bg-slate-950 border border-white/5 rounded-2xl px-6 py-4 text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/30 outline-none h-48 resize-none transition-all font-medium"
+                      placeholder="Type your official announcement here..."
+                      value={announcementText}
+                      onChange={e => setAnnouncementText(e.target.value)}
+                    ></textarea>
+                    <p className="text-[10px] text-slate-500 mt-3 font-medium flex items-center gap-2">
+                      <Info className="w-3 h-3" />
+                      Broadcast will reach all approved participants via their in-app Intelligence Feed.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4 pt-2">
+                    <button
+                      onClick={() => setIsAnnouncementModalOpen(false)}
+                      className="flex-1 px-8 py-4 rounded-2xl bg-white/5 text-white font-bold hover:bg-white/10 transition-all border border-white/5 font-outfit uppercase tracking-wider text-xs"
+                    >
+                      Abort
+                    </button>
+                    <button
+                      onClick={handleBroadcastAnnouncement}
+                      disabled={isBroadcasting || !announcementText.trim()}
+                      className="flex-[2] flex items-center justify-center gap-3 bg-orange-600 text-white px-8 py-4 rounded-2xl hover:bg-orange-700 shadow-xl shadow-orange-600/30 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 font-black font-outfit uppercase tracking-wider text-xs"
+                    >
+                      {isBroadcasting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                      Transmit Message
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
 
       {/* PROFILE EDIT MODAL */}
       {
@@ -3274,12 +3573,33 @@ export default function App() {
               </div>
 
               <form onSubmit={handleUpdateProfile} className="p-6 space-y-4">
+                <div className="flex flex-col items-center mb-6">
+                  <div className="relative group cursor-pointer mb-2">
+                    <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-slate-700 group-hover:border-orange-500 transition-colors bg-slate-800 flex items-center justify-center">
+                      {profileForm.avatarUrl || currentUser?.avatarUrl ? (
+                        <img src={profileForm.avatarUrl || currentUser?.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        <UserCircle className="w-16 h-16 text-slate-600" />
+                      )}
+                    </div>
+                    <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Camera className="w-6 h-6 text-white" />
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={(e) => handleImageUpload(e, 'profile')}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">Tap to change profile picture</p>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-1">Full Name</label>
                   <input
                     type="text"
                     required
-                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none"
                     value={profileForm.name}
                     onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
                   />
@@ -3303,7 +3623,7 @@ export default function App() {
                     <input
                       type="tel"
                       disabled={!!currentUser?.phoneNumber}
-                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                       value={profileForm.phoneNumber || ''}
                       onChange={e => setProfileForm({ ...profileForm, phoneNumber: e.target.value, isPhoneVerified: false })}
                       placeholder="+1234567890"
@@ -3346,7 +3666,7 @@ export default function App() {
                             setAuthLoading(false);
                           }
                         }}
-                        className="px-3 py-2 bg-indigo-600 rounded-lg text-white text-xs font-semibold hover:bg-indigo-700"
+                        className="px-3 py-2 bg-orange-600 rounded-lg text-white text-xs font-semibold hover:bg-orange-700"
                       >
                         Verify
                       </button>
@@ -3362,7 +3682,7 @@ export default function App() {
                     <div className="mt-2 flex gap-2 animate-in fade-in">
                       <input
                         type="text"
-                        className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none tracking-widest text-center"
+                        className="flex-1 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none tracking-widest text-center"
                         placeholder="OTP"
                         value={otp}
                         onChange={e => setOtp(e.target.value)}
@@ -3438,7 +3758,7 @@ export default function App() {
                   <button
                     type="submit"
                     disabled={isSavingProfile}
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-xl shadow-lg shadow-indigo-900/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-semibold py-2 rounded-xl shadow-lg shadow-orange-900/20 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {isSavingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
                   </button>
@@ -3478,11 +3798,11 @@ export default function App() {
                         <h4 className="font-bold text-white mb-2">{event.title}</h4>
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                            <Calendar className="w-3.5 h-3.5 text-orange-400" />
                             {format(new Date(event.date), 'MMMM d, yyyy h:mm a')}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+                            <MapPin className="w-3.5 h-3.5 text-orange-400" />
                             {renderLocation(event.location, event.locationType)}
                           </div>
                         </div>
@@ -3492,7 +3812,7 @@ export default function App() {
 
                   <div className="space-y-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center text-indigo-400">
+                      <div className="w-10 h-10 rounded-full bg-orange-600/20 flex items-center justify-center text-orange-400">
                         <UserCircle className="w-6 h-6" />
                       </div>
                       <div>
@@ -3500,7 +3820,7 @@ export default function App() {
                         <p className="text-xs text-slate-500">{selectedRegistrationDetails.participantEmail}</p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div>
                         <p className="text-xs font-semibold text-slate-400 uppercase">Status</p>
                         <div className="mt-1"><Badge status={selectedRegistrationDetails.status} /></div>
@@ -3511,20 +3831,24 @@ export default function App() {
                           {selectedRegistrationDetails.attended ? 'Yes' : 'No'}
                         </p>
                       </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase">ID</p>
+                        <p className="mt-1 font-mono text-[10px] text-slate-400">#{selectedRegistrationDetails.id.slice(0, 8)}</p>
+                      </div>
                     </div>
 
                     {selectedRegistrationDetails.participationType === 'team' && (
-                      <div className="bg-indigo-900/20 border border-indigo-500/20 p-4 rounded-xl flex items-center justify-between">
+                      <div className="bg-orange-900/20 border border-orange-500/20 p-4 rounded-xl flex items-center justify-between">
                         <div>
-                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Team</p>
+                          <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1">Team</p>
                           <p className="text-slate-200 font-bold text-lg">{selectedRegistrationDetails.teamName}</p>
-                          <p className="text-[10px] text-indigo-300/70 mt-0.5">{selectedRegistrationDetails.isTeamLeader ? 'Team Leader' : 'Team Member'}</p>
+                          <p className="text-[10px] text-orange-300/70 mt-0.5">{selectedRegistrationDetails.isTeamLeader ? 'Team Leader' : 'Team Member'}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Team Code</p>
+                          <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1">Team Code</p>
                           <div className="flex items-center gap-2">
                             <div className="relative group">
-                              <p className="text-slate-100 font-mono font-bold bg-indigo-500/20 px-3 py-1.5 rounded-lg border border-indigo-500/30 select-all">
+                              <p className="text-slate-100 font-mono font-bold bg-orange-500/20 px-3 py-1.5 rounded-lg border border-orange-500/30 select-all">
                                 {teams.find(t => t.id === selectedRegistrationDetails.teamId)?.inviteCode || 'N/A'}
                               </p>
                               {(() => {
@@ -3536,7 +3860,7 @@ export default function App() {
                                         navigator.clipboard.writeText(code);
                                         addToast('Team code copied!', 'success');
                                       }}
-                                      className="absolute -right-2 -top-2 p-1.5 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all scale-0 group-hover:scale-100 active:scale-95"
+                                      className="absolute -right-2 -top-2 p-1.5 bg-orange-600 text-white rounded-full shadow-lg hover:bg-orange-700 transition-all scale-0 group-hover:scale-100 active:scale-95"
                                       title="Copy Code"
                                     >
                                       <Copy className="w-3 h-3" />
@@ -3551,10 +3875,33 @@ export default function App() {
                       </div>
                     )}
 
-                    <div>
-                      <p className="text-xs font-semibold text-slate-400 uppercase mb-1">Email</p>
-                      <p className="text-slate-200">{selectedRegistrationDetails.participantEmail}</p>
-                    </div>
+                    {selectedRegistrationDetails.participationType === 'team' && (
+                      <div className="pt-4 border-t border-slate-800">
+                        <p className="text-sm font-bold text-white mb-3">Team Members</p>
+                        <div className="space-y-2">
+                          {registrations
+                            .filter(r => r.teamId === selectedRegistrationDetails.teamId && r.status !== RegistrationStatus.REJECTED)
+                            .map(member => (
+                              <div key={member.id} className="flex items-center justify-between bg-slate-800/30 p-2.5 rounded-xl border border-white/5">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
+                                    {member.participantName.charAt(0)}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm text-slate-200 font-medium">{member.participantName}</span>
+                                    {member.participantEmail === currentUser?.email && <span className="text-[10px] text-orange-400 font-bold">You</span>}
+                                  </div>
+                                </div>
+                                {member.isTeamLeader && (
+                                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-1 rounded-md">
+                                    Leader
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedRegistrationDetails.answers && Object.keys(selectedRegistrationDetails.answers).length > 0 ? (
                       <div className="pt-4 border-t border-slate-800">
@@ -3581,6 +3928,31 @@ export default function App() {
                     ) : (
                       <p className="text-sm text-slate-400 italic pt-2">No custom answers provided.</p>
                     )}
+
+                    <div className="pt-6 mt-4 border-t border-slate-800 space-y-3">
+                      <button
+                        onClick={() => {
+                          setSelectedTicket(selectedRegistrationDetails);
+                          setSelectedRegistrationDetails(null);
+                        }}
+                        className="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black font-outfit py-4 rounded-2xl transition-all group/tkt"
+                      >
+                        <QrCode className="w-5 h-5 text-orange-400 group-hover/tkt:scale-110 transition-transform" />
+                        View Digital Ticket
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const id = selectedRegistrationDetails.id;
+                          setSelectedRegistrationDetails(null);
+                          handleCancelRegistration(id);
+                        }}
+                        className="w-full flex items-center justify-center gap-3 bg-rose-500/5 border border-rose-500/10 hover:bg-rose-500/10 text-rose-500 font-bold font-outfit py-3 rounded-2xl transition-all group/cancel"
+                      >
+                        <LogOut className="w-4 h-4 group-hover/cancel:-translate-x-1 transition-transform" />
+                        Cancel Registration
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3607,7 +3979,7 @@ export default function App() {
                 <p className="text-sm text-slate-400">Scan this at the entrance</p>
               </div>
               <div className="p-8 flex-1 flex flex-col items-center justify-center bg-slate-900">
-                <div className="p-4 bg-white border-2 border-dashed border-indigo-200 rounded-2xl mb-6 shadow-2xl">
+                <div className="p-4 bg-white border-2 border-dashed border-orange-200 rounded-2xl mb-6 shadow-2xl">
                   <QRCode
                     id="ticket-qr-code"
                     value={JSON.stringify({ id: selectedTicket.id, eventId: selectedTicket.eventId })}
@@ -3617,7 +3989,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={downloadTicket}
-                  className="flex items-center gap-2 text-sm text-indigo-400 font-bold hover:text-indigo-300 hover:bg-indigo-900/30 px-6 py-3 rounded-xl transition-all border border-indigo-500/20 bg-indigo-500/5"
+                  className="flex items-center gap-2 text-sm text-orange-400 font-bold hover:text-orange-300 hover:bg-orange-900/30 px-6 py-3 rounded-xl transition-all border border-orange-500/20 bg-orange-500/5"
                 >
                   <Download className="w-4 h-4" />
                   Download Ticket
@@ -3656,7 +4028,7 @@ export default function App() {
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
             <div className="bg-slate-900 w-full h-full sm:h-[80vh] sm:max-w-2xl flex flex-col sm:rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
               <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900 z-10 flex-shrink-0">
-                <h3 className="text-xl font-bold text-white font-outfit">Crop Image</h3>
+                <h3 className="text-xl font-bold text-white font-outfit">{cropPurpose === 'profile' ? 'Crop Profile Picture' : 'Crop Event Image'}</h3>
                 <button
                   onClick={() => { setIsCropperOpen(false); setTempImageSrc(null); }}
                   className="text-slate-400 hover:text-slate-200 p-2 bg-slate-800 rounded-full hover:bg-slate-700 transition-colors"
@@ -3670,7 +4042,8 @@ export default function App() {
                   image={tempImageSrc}
                   crop={crop}
                   zoom={zoom}
-                  aspect={16 / 9}
+                  aspect={cropPurpose === 'profile' ? 1 : 16 / 9}
+                  cropShape={cropPurpose === 'profile' ? 'round' : 'rect'}
                   onCropChange={setCrop}
                   onCropComplete={onCropComplete}
                   onZoomChange={setZoom}
@@ -3681,7 +4054,7 @@ export default function App() {
                 <div className="flex-1 w-full max-w-xs">
                   <div className="flex justify-between mb-2">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Zoom</label>
-                    <span className="text-xs font-bold text-indigo-400">{zoom.toFixed(1)}x</span>
+                    <span className="text-xs font-bold text-orange-400">{zoom.toFixed(1)}x</span>
                   </div>
                   <input
                     type="range"
@@ -3691,7 +4064,7 @@ export default function App() {
                     step={0.1}
                     aria-labelledby="Zoom"
                     onChange={(e) => setZoom(Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 transition-all hover:bg-slate-750"
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all hover:bg-slate-750"
                   />
                 </div>
                 <div className="flex gap-4 w-full sm:w-auto">
@@ -3703,7 +4076,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={handleCropConfirm}
-                    className="flex-[2] sm:flex-none px-8 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2 transition-all"
+                    className="flex-[2] sm:flex-none px-8 py-3 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-lg shadow-orange-600/20 active:scale-95 flex items-center justify-center gap-2 transition-all"
                   >
                     <Check className="w-5 h-5" /> Apply
                   </button>
@@ -3729,7 +4102,7 @@ export default function App() {
               </button>
 
               <div className="absolute bottom-4 sm:bottom-6 left-6 sm:left-8 right-6 sm:right-8">
-                <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest w-fit mb-2 sm:mb-3 ${selectedEventForDetails.locationType === 'online' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-100'}`}>
+                <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest w-fit mb-2 sm:mb-3 ${selectedEventForDetails.locationType === 'online' ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-100'}`}>
                   {selectedEventForDetails.locationType} Event
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-bold text-white font-outfit line-clamp-2">{selectedEventForDetails.title}</h2>
@@ -3740,19 +4113,19 @@ export default function App() {
             <div className="flex bg-slate-800/50 p-1 mx-6 sm:mx-8 rounded-xl border border-slate-800/50 mt-4">
               <button
                 onClick={() => setDetailsTab('info')}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'info' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'info' ? 'bg-slate-700 text-orange-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 Information
               </button>
               <button
                 onClick={() => setDetailsTab('discussion')}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'discussion' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'discussion' ? 'bg-slate-700 text-orange-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 Discussion
               </button>
               <button
                 onClick={() => setDetailsTab('reviews')}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'reviews' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${detailsTab === 'reviews' ? 'bg-slate-700 text-orange-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 Reviews
               </button>
@@ -3764,8 +4137,8 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 mb-8">
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 text-slate-300">
-                        <div className="p-2 bg-indigo-500/10 rounded-lg">
-                          <Calendar className="w-5 h-5 text-indigo-400" />
+                        <div className="p-2 bg-orange-500/10 rounded-lg">
+                          <Calendar className="w-5 h-5 text-orange-400" />
                         </div>
                         <div>
                           <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Date & Time</p>
@@ -3775,8 +4148,8 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center gap-3 text-slate-300">
-                        <div className="p-2 bg-indigo-500/10 rounded-lg">
-                          <MapPin className="w-5 h-5 text-indigo-400" />
+                        <div className="p-2 bg-orange-500/10 rounded-lg">
+                          <MapPin className="w-5 h-5 text-orange-400" />
                         </div>
                         <div>
                           <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Location</p>
@@ -3789,8 +4162,8 @@ export default function App() {
 
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 text-slate-300">
-                        <div className="p-2 bg-indigo-500/10 rounded-lg">
-                          <Users className="w-5 h-5 text-indigo-400" />
+                        <div className="p-2 bg-orange-500/10 rounded-lg">
+                          <Users className="w-5 h-5 text-orange-400" />
                         </div>
                         <div>
                           <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Capacity</p>
@@ -3799,8 +4172,8 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center gap-3 text-slate-300">
-                        <div className="p-2 bg-indigo-500/10 rounded-lg">
-                          <CheckCircle className="w-5 h-5 text-indigo-400" />
+                        <div className="p-2 bg-orange-500/10 rounded-lg">
+                          <CheckCircle className="w-5 h-5 text-orange-400" />
                         </div>
                         <div>
                           <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Registration</p>
@@ -3813,7 +4186,7 @@ export default function App() {
                   <div className="border-t border-slate-800 pt-6">
                     <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-3">About this experience</p>
                     <div className="bg-slate-800/30 rounded-2xl p-4 sm:p-6 border border-slate-800">
-                      <p className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-line italic border-l-4 border-indigo-500/30 pl-4">
+                      <p className="text-sm sm:text-base text-slate-300 leading-relaxed whitespace-pre-line italic border-l-4 border-orange-500/30 pl-4">
                         {selectedEventForDetails.description}
                       </p>
                     </div>
@@ -3866,7 +4239,7 @@ export default function App() {
                         href={`https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(selectedEventForDetails.title)}&dates=${format(new Date(selectedEventForDetails.date), "yyyyMMdd'T'HHmmss").replace(/-|:/g, '')}/${format(new Date(selectedEventForDetails.endDate), "yyyyMMdd'T'HHmmss").replace(/-|:/g, '')}&details=${encodeURIComponent(selectedEventForDetails.description)}&location=${encodeURIComponent(selectedEventForDetails.location)}&sf=true&output=xml`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-lg text-sm font-medium transition-colors border border-indigo-600/20"
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 rounded-lg text-sm font-medium transition-colors border border-orange-600/20"
                       >
                         <CalendarPlus className="w-4 h-4" /> Google Calendar
                       </a>
@@ -3919,7 +4292,7 @@ export default function App() {
                             <span className="text-[10px] text-slate-500">{format(new Date(msg.createdAt), 'h:mm a')}</span>
                           </div>
                           <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm shadow-sm ${msg.userId === currentUser.id
-                            ? 'bg-indigo-600 text-white rounded-tr-none'
+                            ? 'bg-orange-600 text-white rounded-tr-none'
                             : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'
                             }`}>
                             {msg.content}
@@ -3938,7 +4311,7 @@ export default function App() {
                   <form onSubmit={handleSendMessage} className="mt-auto pt-4 border-t border-slate-800 flex gap-2">
                     <input
                       type="text"
-                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-inner"
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-600 focus:border-transparent outline-none transition-all shadow-inner"
                       placeholder="Ask a question or say hi..."
                       value={newMessageText}
                       onChange={e => setNewMessageText(e.target.value)}
@@ -3946,7 +4319,7 @@ export default function App() {
                     <button
                       type="submit"
                       disabled={!newMessageText.trim()}
-                      className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:grayscale transition-all shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center justify-center group"
+                      className="bg-orange-600 text-white p-3 rounded-xl hover:bg-orange-700 disabled:opacity-50 disabled:grayscale transition-all shadow-lg shadow-orange-600/20 active:scale-95 flex items-center justify-center group"
                     >
                       <Send className="w-5 h-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                     </button>
@@ -4054,14 +4427,14 @@ export default function App() {
                                 type="text"
                                 required
                                 minLength={5}
-                                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all"
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-orange-600 focus:border-transparent outline-none transition-all"
                                 placeholder="Share your experience..."
                                 value={reviewComment}
                                 onChange={e => setReviewComment(e.target.value)}
                               />
                               <button
                                 type="submit"
-                                className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-all font-medium text-sm shadow-lg shadow-indigo-600/20 active:scale-95"
+                                className="bg-orange-600 text-white px-4 py-2 rounded-xl hover:bg-orange-700 transition-all font-medium text-sm shadow-lg shadow-orange-600/20 active:scale-95"
                               >
                                 Post
                               </button>
@@ -4090,7 +4463,7 @@ export default function App() {
                           setSelectedEventForDetails(null);
                           setIsAuthModalOpen(true);
                         }}
-                        className="order-1 sm:order-2 flex-[2] px-6 py-3 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20 active:scale-95 font-outfit"
+                        className="order-1 sm:order-2 flex-[2] px-6 py-3 rounded-xl font-bold bg-orange-600 text-white hover:bg-orange-700 shadow-orange-500/20 active:scale-95 font-outfit"
                       >
                         Sign In to Register
                       </button>
@@ -4120,12 +4493,12 @@ export default function App() {
                       }}
                       disabled={!isRegistered && isClosed}
                       className={`order-1 sm:order-2 flex-[2] px-6 py-3 rounded-xl font-bold transition-all shadow-lg font-outfit ${isRegistered
-                        ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-500 hover:bg-indigo-900/60 active:scale-95'
+                        ? 'bg-orange-900/40 text-orange-400 border border-orange-500 hover:bg-orange-900/60 active:scale-95'
                         : isClosed
                           ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
                           : isFull
                             ? 'bg-amber-600/20 text-amber-500 border border-amber-600/40 hover:bg-amber-600/30 active:scale-95'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20 active:scale-95'
+                            : 'bg-orange-600 text-white hover:bg-orange-700 shadow-orange-500/20 active:scale-95'
                         }`}
                     >
                       {isRegistered ? (

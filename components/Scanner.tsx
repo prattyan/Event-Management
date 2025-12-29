@@ -153,7 +153,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
       <div className="relative w-full max-w-md bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700">
         <div className="flex justify-between items-center p-4 bg-slate-800">
           <h3 className="text-white font-semibold flex items-center gap-2">
-            <Camera className="w-5 h-5 text-indigo-400" />
+            <Camera className="w-5 h-5 text-orange-400" />
             Scan Ticket
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
@@ -186,8 +186,8 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
 
           {/* Overlay guide */}
           {isScanning && !error && (
-            <div className="absolute inset-0 pointer-events-none border-2 border-indigo-500/50 m-12 rounded-lg flex items-center justify-center">
-              <div className="w-full h-0.5 bg-indigo-500/50 animate-pulse"></div>
+            <div className="absolute inset-0 pointer-events-none border-2 border-orange-500/50 m-12 rounded-lg flex items-center justify-center">
+              <div className="w-full h-0.5 bg-orange-500/50 animate-pulse"></div>
             </div>
           )}
         </div>

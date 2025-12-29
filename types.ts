@@ -9,6 +9,7 @@ export interface User {
   bio?: string;
   skills?: string[];
   phoneNumber?: string;
+  avatarUrl?: string; // URL to profile picture
 }
 
 export interface CustomQuestion {

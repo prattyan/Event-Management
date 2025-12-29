@@ -6,52 +6,119 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EventHorizon</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <style>
+    :root {
+      --primary-base: rgba(217, 119, 87, 0.95);
+      --primary-solid: #d97757;
+      --primary-light: rgba(217, 119, 87, 0.4);
+      --primary-glow: rgba(217, 119, 87, 0.2);
+      --sunset-gradient: linear-gradient(135deg, #d97757 0%, #ff8c42 100%);
+      --dark-midnight: #020617;
+      --dark-card: rgba(15, 23, 42, 0.6);
+      --border-sharp: rgba(217, 119, 87, 0.3);
+    }
+
     body {
       font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      background: #020617;
+      min-height: 100vh;
+      color: #f8fafc;
     }
 
-    /* Hide scrollbar for clean modal look */
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
+    .font-outfit {
+      font-family: 'Outfit', sans-serif;
     }
 
-    .no-scrollbar {
-      -ms-overflow-style: none;
-      scrollbar-width: none;
+    /* --- High-Clarity Tech Design --- */
+
+    .liquid-glass {
+      background: rgba(5, 5, 15, 0.7);
+      border: 1px solid var(--border-sharp);
+      box-shadow:
+        0 0 0 1px rgba(217, 119, 87, 0.1),
+        0 20px 50px -12px rgba(0, 0, 0, 0.8),
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+      position: relative;
     }
 
-    /* Custom Scrollbar for Dark Mode */
+    .glass-card {
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow:
+        0 10px 15px -3px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.02);
+      transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1);
+    }
+
+    .glass-card:hover {
+      background: rgba(21, 31, 51, 0.6);
+      border-color: var(--primary-light);
+      transform: translateY(-12px) scale(1.02);
+      box-shadow:
+        0 30px 60px -12px rgba(0, 0, 0, 0.9),
+        0 0 20px 0 rgba(217, 119, 87, 0.1);
+    }
+
+    .hyper-glow {
+      box-shadow: 0 0 40px -5px var(--primary-glow);
+    }
+
+    .hyper-glow:hover {
+      box-shadow: 0 0 50px -2px var(--primary-glow);
+    }
+
+    /* Chromatic Refraction Text */
+    .text-refraction {
+      background: linear-gradient(90deg, #fff, #fb923c, #f97316, #fb923c, #fff);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 12px rgba(217, 119, 87, 0.4));
+      animation: shine 5s linear infinite;
+      letter-spacing: -0.05em;
+    }
+
+    @keyframes shine {
+      to {
+        background-position: 200% center;
+      }
+    }
+
+    /* Animated Border System */
+    .border-glow {
+      position: relative;
+      background: linear-gradient(#0f172a, #0f172a) padding-box,
+        linear-gradient(45deg, #d97757, #ed8936, transparent) border-box;
+      border: 1px solid transparent;
+    }
+
+    /* Custom Scrollbar */
     .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: #0f172a;
-      /* slate-900 */
+      width: 5px;
     }
 
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: #334155;
-      /* slate-700 */
+      background: var(--primary-light);
       border-radius: 10px;
     }
 
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-      background: #475569;
-      /* slate-600 */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
     }
   </style>
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#4f46e5" />
+  <meta name="theme-color" content="#d97757" />
 </head>
 
-<body class="bg-slate-950 text-slate-100 antialiased">
+<body class="bg-[#020617] text-slate-100 antialiased selection:bg-orange-500/30">
   <div id="root"></div>
 
-  <!-- Permanent reCAPTCHA Containers for Firebase Auth -->
+  <!-- Permanent reCAPTCHA Containers -->
   <div id="persistent-recaptcha-container" style="visibility: hidden; position: absolute; pointer-events: none;"></div>
   <div id="persistent-profile-recaptcha" style="visibility: hidden; position: absolute; pointer-events: none;"></div>
   <script type="module" src="/index.tsx"></script>
@@ -72,8 +139,14 @@
       theme: {
         extend: {
           colors: {
+            primary: {
+              DEFAULT: 'rgba(217, 119, 87, 0.9)',
+              light: 'rgba(217, 119, 87, 0.3)',
+              subtle: 'rgba(217, 119, 87, 0.1)',
+              solid: '#d97757',
+            },
             slate: {
-              850: '#1e293b', // Custom dark shade if needed
+              850: '#1e293b',
               950: '#020617',
             }
           }

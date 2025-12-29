@@ -264,12 +264,46 @@ export const saveEvent = async (event: Omit<Event, 'id'>): Promise<Event | null>
 export const updateEvent = async (event: Event): Promise<boolean> => {
   if (USE_MONGO) {
     try {
+      // Get old event to check capacity increase
+      const oldEventResult = await mongoRequest('findOne', 'events', { filter: { id: event.id } });
+      const oldEvent = oldEventResult.document;
+      const oldCapacity = oldEvent ? Number(oldEvent.capacity) : 0;
+      const newCapacity = Number(event.capacity);
+
       const { id, ...updateData } = event;
       const result = await mongoRequest('updateOne', 'events', {
         filter: { id: id },
         update: { $set: updateData }
       });
-      return result.modifiedCount > 0 || result.matchedCount > 0 || result.upsertedCount > 0;
+
+      const success = result.modifiedCount > 0 || result.matchedCount > 0 || result.upsertedCount > 0;
+
+      // Handle Waitlist Promotion if capacity increased
+      if (success && newCapacity > oldCapacity) {
+        const regsResult = await mongoRequest('find', 'registrations', {
+          filter: { eventId: id, status: { $ne: RegistrationStatus.REJECTED } }
+        });
+
+        const allRegs = regsResult.documents || [];
+        const nonWaitlistedCount = allRegs.filter((r: any) => r.status !== RegistrationStatus.WAITLISTED).length;
+        const waitlistedOnes = allRegs
+          .filter((r: any) => r.status === RegistrationStatus.WAITLISTED)
+          .sort((a: any, b: any) => new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime());
+
+        const availableSlots = newCapacity - nonWaitlistedCount;
+        if (availableSlots > 0 && waitlistedOnes.length > 0) {
+          const toPromote = waitlistedOnes.slice(0, availableSlots);
+          for (const reg of toPromote) {
+            await mongoRequest('updateOne', 'registrations', {
+              filter: { id: reg.id || reg._id },
+              update: { $set: { status: RegistrationStatus.PENDING } }
+            });
+            console.log(`Auto-promoted ${reg.participantName} to PENDING`);
+          }
+        }
+      }
+
+      return success;
     } catch (e: any) {
       console.error("Mongo update event failed", e);
       throw e;
@@ -279,8 +313,35 @@ export const updateEvent = async (event: Event): Promise<boolean> => {
   if (USE_FIREBASE_STORAGE) {
     try {
       const eventRef = doc(db, "events", event.id);
+      const oldEventSnap = await getDoc(eventRef);
+      const oldCapacity = oldEventSnap.exists() ? Number(oldEventSnap.data().capacity) : 0;
+      const newCapacity = Number(event.capacity);
+
       const { id, ...data } = event;
       await updateDoc(eventRef, data as any);
+
+      if (newCapacity > oldCapacity) {
+        const q = query(
+          collection(db, "registrations"),
+          where("eventId", "==", event.id),
+          where("status", "!=", RegistrationStatus.REJECTED)
+        );
+        const snapshot = await getDocs(q);
+        const allRegs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Registration));
+
+        const nonWaitlistedCount = allRegs.filter(r => r.status !== RegistrationStatus.WAITLISTED).length;
+        const waitlistedOnes = allRegs
+          .filter(r => r.status === RegistrationStatus.WAITLISTED)
+          .sort((a, b) => new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime());
+
+        const availableSlots = newCapacity - nonWaitlistedCount;
+        if (availableSlots > 0 && waitlistedOnes.length > 0) {
+          const toPromote = waitlistedOnes.slice(0, availableSlots);
+          for (const reg of toPromote) {
+            await updateDoc(doc(db, "registrations", reg.id), { status: RegistrationStatus.PENDING });
+          }
+        }
+      }
       return true;
     } catch (e) {
       console.error("Firebase updateEvent failed:", e);
@@ -292,8 +353,29 @@ export const updateEvent = async (event: Event): Promise<boolean> => {
   const events = await getEvents();
   const index = events.findIndex(e => e.id === event.id);
   if (index >= 0) {
+    const oldCapacity = Number(events[index].capacity);
+    const newCapacity = Number(event.capacity);
     events[index] = event;
     localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(events));
+
+    if (newCapacity > oldCapacity) {
+      const regs = await getRegistrations();
+      const eventRegs = regs.filter(r => r.eventId === event.id && r.status !== RegistrationStatus.REJECTED);
+      const nonWaitlisted = eventRegs.filter(r => r.status !== RegistrationStatus.WAITLISTED).length;
+      const waitlisted = eventRegs
+        .filter(r => r.status === RegistrationStatus.WAITLISTED)
+        .sort((a, b) => new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime());
+
+      const available = newCapacity - nonWaitlisted;
+      if (available > 0 && waitlisted.length > 0) {
+        const toPromote = waitlisted.slice(0, available);
+        toPromote.forEach(r => {
+          const regIdx = regs.findIndex(found => found.id === r.id);
+          if (regIdx >= 0) regs[regIdx].status = RegistrationStatus.PENDING;
+        });
+        localStorage.setItem(STORAGE_KEYS.REGISTRATIONS, JSON.stringify(regs));
+      }
+    }
     return true;
   }
   return false;
