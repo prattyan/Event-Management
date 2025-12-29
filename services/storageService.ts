@@ -69,6 +69,70 @@ async function mongoRequest(action: string, collection: string, body: any, retri
   }
 }
 
+export const getInitialData = async (userId?: string) => {
+  if (USE_MONGO) {
+    try {
+      const requests = [
+        // 1. Events
+        {
+          collection: 'events',
+          action: 'find',
+          filter: {},
+          limit: 12,
+          projection: { imageUrl: 0, description: 0 }
+        },
+        // 2. Registrations
+        {
+          collection: 'registrations',
+          action: 'find',
+          filter: {}, // We fetch all for now as per original logic, though this ideally should be filtered
+        }
+      ];
+
+      // 3. Notifications (only if user logged in)
+      if (userId) {
+        requests.push({
+          collection: 'notifications',
+          action: 'find',
+          filter: { userId: userId },
+          sort: { date: -1 }
+        });
+      }
+
+      const response = await mongoRequest('fetchBatch', '', { requests });
+
+      if (response && response.results) {
+        const events = (response.results[0]?.documents || []).map((doc: any) => ({
+          ...doc,
+          id: doc.id || doc._id,
+          imageUrl: '',
+          description: doc.description || ''
+        }));
+
+        const registrations = (response.results[1]?.documents || []).map((doc: any) => ({
+          ...doc,
+          id: doc.id || doc._id
+        }));
+
+        const notifications = userId && response.results[2]
+          ? (response.results[2].documents || []).map((doc: any) => ({ ...doc, id: doc.id || doc._id }))
+          : [];
+
+        return { events, registrations, notifications };
+      }
+    } catch (e) {
+      console.error("Batch fetch failed", e);
+    }
+  }
+  // Fallback to individual fetches if batch fails or not using Mongo
+  const [events, registrations] = await Promise.all([
+    getEvents(),
+    getRegistrations()
+  ]);
+  // Note: Notifications handled separately in fallback usually, but here we return empty or let caller handle
+  return { events, registrations, notifications: [] };
+};
+
 // --- Events ---
 
 export const getEvents = async (): Promise<Event[]> => {

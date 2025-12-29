@@ -105,6 +105,35 @@ export const handler = async (event, context) => {
                     body: JSON.stringify(result)
                 };
 
+            case 'fetchBatch':
+                const requests = body.requests;
+                if (!Array.isArray(requests)) {
+                    return { statusCode: 400, headers, body: JSON.stringify({ error: "Batch requests must be an array" }) };
+                }
+                const batchResults = await Promise.all(requests.map(async (reqItem) => {
+                    try {
+                        const batchCol = db.collection(reqItem.collection);
+                        if (reqItem.action === 'find') {
+                            const opts = {};
+                            if (reqItem.limit) opts.limit = parseInt(reqItem.limit);
+                            if (reqItem.projection) opts.projection = reqItem.projection;
+                            const docs = await batchCol.find(reqItem.filter || {}, opts).toArray();
+                            return { documents: docs };
+                        } else if (reqItem.action === 'findOne') {
+                            const opts = {};
+                            if (reqItem.projection) opts.projection = reqItem.projection;
+                            const doc = await batchCol.findOne(reqItem.filter || {}, opts);
+                            return { document: doc };
+                        }
+                        return null;
+                    } catch (e) { return { error: e.message }; }
+                }));
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({ results: batchResults })
+                };
+
             default:
                 return {
                     statusCode: 400,

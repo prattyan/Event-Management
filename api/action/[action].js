@@ -79,6 +79,37 @@ export default async function handler(req, res) {
                 result = await col.deleteMany(filter || {});
                 return res.status(200).json(result);
 
+            case 'fetchBatch':
+                // req.body.requests should be an array of { collection, action, filter, limit, projection, sort }
+                const requests = req.body.requests;
+                if (!Array.isArray(requests)) {
+                    return res.status(400).json({ error: "Batch requests must be an array" });
+                }
+
+                // Execute all requests in parallel
+                const batchResults = await Promise.all(requests.map(async (reqItem) => {
+                    try {
+                        const batchCol = db.collection(reqItem.collection);
+                        if (reqItem.action === 'find') {
+                            const opts = {};
+                            if (reqItem.limit) opts.limit = parseInt(reqItem.limit);
+                            if (reqItem.projection) opts.projection = reqItem.projection;
+                            if (reqItem.sort) opts.sort = reqItem.sort;
+                            const docs = await batchCol.find(reqItem.filter || {}, opts).toArray();
+                            return { documents: docs };
+                        } else if (reqItem.action === 'findOne') {
+                            const opts = {};
+                            if (reqItem.projection) opts.projection = reqItem.projection;
+                            const doc = await batchCol.findOne(reqItem.filter || {}, opts);
+                            return { document: doc };
+                        }
+                        return null;
+                    } catch (e) {
+                        return { error: e.message };
+                    }
+                }));
+                return res.status(200).json({ results: batchResults });
+
             default:
                 return res.status(400).json({ error: `Unknown action: ${action}` });
         }

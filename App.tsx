@@ -18,7 +18,7 @@ import {
   loginWithGoogle, saveUserProfile, resetUserPassword,
   createTeam, getTeamByInviteCode, joinTeam, getTeamsByEventId, getTeamById,
   getNotifications, addNotification, markNotificationRead,
-  getMessages, addMessage, getReviews, addReview, deleteAccount, getEventById, getEventImage
+  getMessages, addMessage, getReviews, addReview, deleteAccount, getEventById, getEventImage, getInitialData
 } from './services/storageService';
 import { generateEventDescription, getEventRecommendations } from './services/geminiService';
 import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificationService';
@@ -361,13 +361,12 @@ export default function App() {
   const loadData = async (isSilent = false) => {
     if (!isSilent) setDataLoading(true);
     try {
-      if (currentUser) {
-        const [evts, regs, notifs] = await Promise.all([
-          getEvents(),
-          getRegistrations(),
-          getNotifications(currentUser.id)
-        ]);
+      const initialData = await getInitialData(currentUser ? currentUser.id : undefined);
+      const evts = initialData.events || [];
+      const regs = initialData.registrations || [];
+      const notifs = initialData.notifications || [];
 
+      if (currentUser) {
         setEvents(evts);
         setRegistrations(regs);
         setNotifications(notifs);
@@ -382,8 +381,7 @@ export default function App() {
           setTeams(allTeams.flat());
         }
       } else {
-        const loadedEvents = await getEvents();
-        setEvents(loadedEvents);
+        setEvents(evts);
       }
     } catch (e) {
       if (!isSilent) addToast('Failed to load data', 'error');
