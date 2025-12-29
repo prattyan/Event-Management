@@ -61,15 +61,5 @@ We have leveraged the power of **Google Gemini (gemini-1.5-flash)** via the `Goo
     *   **Problem**: Simple database queries cannot match users to events based on "vibes" or semantic interests.
     *   **Solution**: We feed a user's *past event history* and the *current event catalog* into Gemini as context. The model acts as a semantic matcher, returning a JSON array of event IDs that strictly match the user's inferred preferences.
 
-
-## 🔮 Future Roadmap & Scalability
-Our vision extends beyond solving today's problems. We plan to evolve EventHorizon into a full-scale ecosystem:
-
-1.  **💰 Integrated Payments**: Direct integration with Stripe/Razorpay for paid ticketing and seamless revenue payouts for organizers.
-2.  **🕸️ AI Networking**: "Tinder for Networking" feature where Gemini matches attendees based on their profiles and goals before the event starts.
-3.  **📡 Hybrid Event Support**: Native integration with Zoom/YouTube Live for creating "Phygital" (Physical + Digital) experiences where online tracking is as robust as offline scanning.
-4.  **🏷️ NFC & Hardware**: Support for NFC-enabled badges for "tap-to-enter" functionality, reducing friction even further for mega-events.
-5.  **📈 Sentiment Analysis**: Post-event AI analysis of reviews and feedback to give organizers a "Satisfaction Score" and actionable areas for improvement.
-
 ---
 *Built for the [Hackathon Name] by [Your Team Name]*

@@ -139,7 +139,10 @@ app.post('/api/action/:action', async (req, res) => {
 
     if (!db) return res.status(500).json({ error: "Database not connected" });
 
-    const col = db.collection(collection);
+    let col;
+    if (collection) {
+        col = db.collection(collection);
+    }
 
     // Simple In-Memory Cache for GET-like POST requests (find/findOne)
     // Cache key based on collection + action + filters

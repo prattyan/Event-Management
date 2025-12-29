@@ -10,7 +10,7 @@ const genAI = new GoogleGenerativeAI(apiKey);
 export const generateEventDescription = async (title: string, date: string, location: string): Promise<string | null> => {
   try {
     // For text-only input, use the gemini-pro or gemini-1.5-flash model
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
     const prompt = `
       You are an expert event planner. Write a compelling, professional, and exciting description for an event.
