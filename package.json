@@ -22,6 +22,7 @@
     "express": "^5.2.1",
     "firebase": "^12.7.0",
     "framer-motion": "^12.23.26",
+    "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.562.0",
     "mongodb": "^7.0.0",

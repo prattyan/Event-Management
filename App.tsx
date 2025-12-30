@@ -7,6 +7,7 @@ import {
   X,
   Ticket, Info, Trash2, Camera, RefreshCw, Smartphone, Shield, LogOut, Settings as Setting2, Layout, Bell, UserCircle, Search, MoreHorizontal, Check, AlertCircle, CheckSquare, MessageSquare, KeyRound, Share2, Facebook, Twitter, Linkedin, Copy, Star, CalendarPlus, Loader2, Image as ImageIcon, ChevronLeft, Link, Save, Upload
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
 
@@ -1440,37 +1441,31 @@ export default function App() {
     }
   };
 
-  const downloadTicket = () => {
-    const svg = document.getElementById('ticket-qr-code');
-    if (!svg) return;
+  const downloadTicket = async () => {
+    const element = document.getElementById('digital-ticket-card');
+    if (!element) return;
 
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
+    try {
+      addToast("Preparing ticket...", "info");
 
-    // QR code is size 200, lets make the downloaded image a bit larger with white padding
-    const size = 200;
-    const padding = 40; // Total padding (20 on each side)
-    canvas.width = size + padding;
-    canvas.height = size + padding;
+      const canvas = await html2canvas(element, {
+        backgroundColor: null,
+        scale: 3,
+        logging: false,
+        useCORS: true,
+      });
 
-    img.onload = () => {
-      if (ctx) {
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, padding / 2, padding / 2);
+      const pngFile = canvas.toDataURL("image/png", 1.0);
+      const downloadLink = document.createElement("a");
+      downloadLink.download = `EventHorizon-Ticket-${selectedTicket?.id.slice(0, 8) || 'Pass'}.png`;
+      downloadLink.href = pngFile;
+      downloadLink.click();
 
-        const pngFile = canvas.toDataURL("image/png");
-        const downloadLink = document.createElement("a");
-        downloadLink.download = `EventHorizon-Ticket-${selectedTicket?.id.slice(0, 8)}.png`;
-        downloadLink.href = pngFile;
-        downloadLink.click();
-        addToast("Ticket downloaded!", "success");
-      }
-    };
-
-    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+      addToast("Ticket saved to gallery!", "success");
+    } catch (err) {
+      console.error("Ticket download failed", err);
+      addToast("Failed to save ticket", "error");
+    }
   };
 
   const handleSendOtp = async (e?: React.FormEvent) => {
@@ -4021,47 +4016,157 @@ export default function App() {
       }
 
       {/* TICKET QR MODAL */}
-      {
-        selectedTicket && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-slate-900 w-full h-full sm:h-auto sm:max-w-sm sm:rounded-3xl shadow-2xl overflow-hidden transform transition-all flex flex-col animate-in zoom-in-95 duration-300">
-              <div className="p-6 text-center border-b border-slate-800 bg-slate-900 flex-shrink-0">
-                <h3 className="text-lg font-bold text-white font-outfit">Digital Ticket</h3>
-                <p className="text-sm text-slate-400">Scan this at the entrance</p>
-              </div>
-              <div className="p-8 flex-1 flex flex-col items-center justify-center bg-slate-900">
-                <div className="p-4 bg-white border-2 border-dashed border-orange-200 rounded-2xl mb-6 shadow-2xl">
-                  <QRCode
-                    id="ticket-qr-code"
-                    value={JSON.stringify({ id: selectedTicket.id, eventId: selectedTicket.eventId })}
-                    size={220}
-                    level="M"
+      <AnimatePresence>
+        {selectedTicket && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, rotateX: 10 }}
+              animate={{ opacity: 1, scale: 1, rotateX: 0 }}
+              exit={{ opacity: 0, scale: 0.9, rotateX: -10 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              id="digital-ticket-card"
+              className="relative w-full max-w-sm bg-slate-900 rounded-[32px] overflow-hidden border border-white/10 shadow-2xl shadow-orange-500/10"
+            >
+              {/* Decorative Header Gradient */}
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-orange-600 via-amber-500 to-orange-600" />
+              {/* Ambient Glows */}
+              <div className="absolute -top-32 -right-32 w-64 h-64 bg-orange-500/15 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="p-8 pb-0 pt-10 text-center relative z-10">
+                {/* Event Info Header */}
+                {(() => {
+                  const event = events.find(e => e.id === selectedTicket.eventId);
+                  return (
+                    <div className="mb-8">
+                      <motion.div
+                        initial={{ y: -20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.1 }}
+                        className="inline-flex items-center justify-center p-3 bg-white/5 rounded-2xl mb-4 shadow-inner ring-1 ring-white/10"
+                      >
+                        <Ticket className="w-6 h-6 text-orange-400" />
+                      </motion.div>
+                      <motion.h3
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.2 }}
+                        className="text-2xl font-black text-white font-outfit leading-tight mb-2"
+                      >
+                        {event ? event.title : 'Digital Ticket'}
+                      </motion.h3>
+                      {event && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.3 }}
+                          className="text-sm font-medium text-slate-400 flex items-center justify-center gap-2"
+                        >
+                          {format(new Date(event.date), 'MMM d, yyyy')}
+                          <span className="w-1 h-1 bg-slate-600 rounded-full" />
+                          {format(new Date(event.date), 'h:mm a')}
+                        </motion.p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* QR Section */}
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="relative mx-auto w-64 h-64 bg-white p-4 rounded-[24px] shadow-2xl ring-8 ring-white/5 flex items-center justify-center group overflow-hidden"
+                >
+                  <div className="relative z-10">
+                    <QRCode
+                      id="ticket-qr-code"
+                      value={JSON.stringify({ id: selectedTicket.id, eventId: selectedTicket.eventId })}
+                      size={220}
+                      level="M"
+                    />
+                  </div>
+
+                  {/* Scanning Animation */}
+                  <motion.div
+                    initial={{ top: "0%" }}
+                    animate={{ top: "120%" }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+                    data-html2canvas-ignore="true"
+                    className="absolute left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-orange-500 to-transparent shadow-[0_0_25px_rgba(249,115,22,0.8)] z-20 pointer-events-none opacity-80"
                   />
+
+                  {/* Tech/Frame Overlay */}
+                  <div className="absolute inset-0 border-[3px] border-slate-900/5 rounded-[24px] pointer-events-none z-10" />
+
+                  <div className="absolute top-4 left-4 w-3 h-3 border-l-2 border-t-2 border-slate-900 z-10" />
+                  <div className="absolute top-4 right-4 w-3 h-3 border-r-2 border-t-2 border-slate-900 z-10" />
+                  <div className="absolute bottom-4 left-4 w-3 h-3 border-l-2 border-b-2 border-slate-900 z-10" />
+                  <div className="absolute bottom-4 right-4 w-3 h-3 border-r-2 border-b-2 border-slate-900 z-10" />
+                </motion.div>
+
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.6 }}
+                  className="mt-6 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500"
+                >
+                  Scan for Entry
+                </motion.p>
+              </div>
+
+              {/* Ticket Footer / Stub */}
+              <div className="mt-8 px-6 pt-6 pb-0 bg-slate-950/80 backdrop-blur-md border-t border-white/5 relative z-10">
+                {/* Perforation Effect */}
+                <div className="absolute -top-1.5 left-0 w-full flex justify-between gap-2 overflow-hidden px-1">
+                  {[...Array(20)].map((_, i) => (
+                    <div key={i} className="w-3 h-3 rounded-full bg-black/40 -mt-1.5" />
+                  ))}
                 </div>
-                <button
-                  onClick={downloadTicket}
-                  className="flex items-center gap-2 text-sm text-orange-400 font-bold hover:text-orange-300 hover:bg-orange-900/30 px-6 py-3 rounded-xl transition-all border border-orange-500/20 bg-orange-500/5"
-                >
-                  <Download className="w-4 h-4" />
-                  Download Ticket
-                </button>
+
+                <div className="flex items-center justify-between pt-2">
+                  <div className="text-left">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Attendee</p>
+                    <p className="text-lg font-bold text-white font-outfit truncate max-w-[180px]">{selectedTicket.participantName}</p>
+                    <p className="text-[10px] font-mono text-slate-600 mt-0.5">#{selectedTicket.id.slice(0, 8).toUpperCase()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</p>
+                    {selectedTicket.attended ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-[10px] font-bold text-green-400 uppercase tracking-wide">
+                        <Check className="w-3 h-3" /> Used
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-[10px] font-bold text-orange-400 uppercase tracking-wide animate-pulse">
+                        <Sparkles className="w-3 h-3" /> Valid
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-6 mb-2" data-html2canvas-ignore="true">
+                  <button
+                    onClick={() => setSelectedTicket(null)}
+                    className="flex-1 py-3.5 rounded-xl text-slate-400 font-bold text-sm hover:bg-white/5 hover:text-white transition-all border border-transparent hover:border-white/5 active:scale-95"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={downloadTicket}
+                    className="flex-[2] py-3.5 rounded-xl bg-gradient-to-r from-orange-600 to-orange-500 text-white font-bold text-sm shadow-lg shadow-orange-600/20 hover:shadow-orange-600/30 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 group"
+                  >
+                    <Download className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                    Save Ticket
+                  </button>
+                </div>
+
+                {/* Bottom Spacer for Visual Balance in Download */}
+                <div className="h-4 w-full" />
               </div>
-              <div className="p-6 bg-slate-950 border-t border-slate-800 text-center flex-shrink-0">
-                <p className="text-base font-bold text-white font-outfit">{selectedTicket.participantName}</p>
-                <p className="text-xs text-slate-400 uppercase tracking-widest mt-1">
-                  {selectedTicket.attended ? <span className="text-green-500">Already Attended</span> : 'Valid Entry Ticket'}
-                </p>
-                <button
-                  onClick={() => setSelectedTicket(null)}
-                  className="mt-6 w-full py-3 rounded-xl bg-slate-800 text-slate-300 font-bold hover:bg-slate-700 transition-all font-outfit"
-                >
-                  Close Ticket
-                </button>
-              </div>
-            </div>
+            </motion.div>
           </div>
-        )
-      }
+        )}
+      </AnimatePresence>
 
       {/* SCANNER MODAL */}
       {
