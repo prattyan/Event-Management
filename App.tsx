@@ -2,7 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'react-qr-code';
 import {
-  Users, Sparkles, MapPin, ExternalLink, QrCode, ChevronRight, Edit, Calendar, Clock, Plus, ScanLine, Filter, Download, Mail, Send, CheckCircle, XCircle, UserPlus, Info, Trash2, Camera, RefreshCw, Smartphone, Shield, LogOut, Settings as Setting2, Layout, Bell, UserCircle, Search, MoreHorizontal, Check, AlertCircle, CheckSquare, MessageSquare, KeyRound, Share2, Facebook, Twitter, Linkedin, Copy, Star, CalendarPlus, Loader2, Image as ImageIcon, X, ChevronLeft, Link, Save, Upload
+  Users, Sparkles, MapPin, ExternalLink, QrCode, ChevronRight, Edit, Calendar, Clock, Plus, ScanLine, Filter, Download, Mail, Send, CheckCircle, XCircle,
+  Menu,
+  X,
+  Ticket, Info, Trash2, Camera, RefreshCw, Smartphone, Shield, LogOut, Settings as Setting2, Layout, Bell, UserCircle, Search, MoreHorizontal, Check, AlertCircle, CheckSquare, MessageSquare, KeyRound, Share2, Facebook, Twitter, Linkedin, Copy, Star, CalendarPlus, Loader2, Image as ImageIcon, ChevronLeft, Link, Save, Upload
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
@@ -23,6 +26,7 @@ import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificatio
 import Scanner from './components/Scanner';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import LiquidChrome from './components/LiquidChrome';
+import ParticleBackground from './components/ParticleBackground';
 import { socketService } from './services/socketService';
 
 // --- Sub-Components ---
@@ -36,24 +40,24 @@ const ToastContainer = ({ toasts }: { toasts: Toast[] }) => (
           initial={{ opacity: 0, y: 20, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-          className={`pointer-events-auto border-2 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[24px] px-7 py-5 text-sm font-black flex items-center gap-4 relative overflow-hidden
+          className={`pointer - events - auto border - 2 shadow - [0_20px_50px_rgba(0, 0, 0, 0.5)] rounded - [24px] px - 7 py - 5 text - sm font - black flex items - center gap - 4 relative overflow - hidden
             ${t.type === 'success' ? 'bg-[#020617] border-green-500/30 text-green-400' :
               t.type === 'error' ? 'bg-[#020617] border-red-500/30 text-red-400' :
                 t.type === 'warning' ? 'bg-[#020617] border-amber-500/30 text-amber-400' :
                   'bg-[#020617] border-orange-500/30 text-orange-400'
             } `}
         >
-          <div className={`absolute -inset-1 opacity-20 blur-xl -z-10 ${t.type === 'success' ? 'bg-green-500' :
+          <div className={`absolute - inset - 1 opacity - 20 blur - xl - z - 10 ${t.type === 'success' ? 'bg-green-500' :
             t.type === 'error' ? 'bg-red-500' :
               t.type === 'warning' ? 'bg-amber-500' :
                 'bg-orange-500'
-            }`} />
+            } `} />
 
-          <div className={`p-2 rounded-xl flex-shrink-0 ${t.type === 'success' ? 'bg-green-500/20' :
+          <div className={`p - 2 rounded - xl flex - shrink - 0 ${t.type === 'success' ? 'bg-green-500/20' :
             t.type === 'error' ? 'bg-red-500/20' :
               t.type === 'warning' ? 'bg-amber-500/20' :
                 'bg-orange-500/20'
-            }`}>
+            } `}>
             {t.type === 'success' && <CheckCircle className="w-5 h-5" />}
             {t.type === 'error' && <XCircle className="w-5 h-5" />}
             {t.type === 'warning' && <AlertCircle className="w-5 h-5" />}
@@ -75,7 +79,7 @@ const Badge = ({ status }: { status: RegistrationStatus }) => {
   };
 
   return (
-    <span className={`px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${styles[status]}`}>
+    <span className={`px - 2 py - 1 rounded - md text - [11px] font - bold uppercase tracking - wider border ${styles[status]} `}>
       {status}
     </span>
   );
@@ -157,7 +161,7 @@ const LazyEventImage = ({ eventId, initialSrc, alt, className }: { eventId: stri
 
   if (loading || !src) {
     return (
-      <div className={`bg-slate-800 flex items-center justify-center ${className}`}>
+      <div className={`bg - slate - 800 flex items - center justify - center ${className} `}>
         {loading ? <Loader2 className="w-6 h-6 text-slate-600 animate-spin" /> : <ImageIcon className="w-8 h-8 text-slate-700" />}
       </div>
     );
@@ -230,6 +234,18 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [otpPurpose, setOtpPurpose] = useState<'login' | 'profile' | 'deletion'>('login');
+
+  // Lock body scroll when auth modal is open
+  useEffect(() => {
+    if (isAuthModalOpen || !currentUser) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isAuthModalOpen, currentUser]);
 
   const renderLocation = (location: string, type: 'online' | 'offline', className?: string) => {
     const isLink = type === 'online' && (location.startsWith('http') || location.includes('.') || location.toLowerCase().includes('zoom') || location.toLowerCase().includes('google.com'));
@@ -1452,245 +1468,270 @@ export default function App() {
   const renderAuthModal = () => {
     if (!isAuthModalOpen && currentUser) return null;
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm overflow-y-auto">
-        <div className="bg-slate-900 rounded-2xl shadow-xl overflow-hidden max-w-4xl w-full flex flex-col md:flex-row border border-slate-800 relative">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden bg-slate-950">
+        {/* Galaxy Background */}
+        <div
+          className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-80 animate-galaxy"
+          style={{ backgroundImage: "url('/galaxy.png')" }}
+        ></div>
+
+        <div className="absolute inset-0 z-0 bg-black/40"></div> {/* Overlay for contrast */}
+
+        <div className="absolute inset-0 z-0">
+          <ParticleBackground />
+        </div>
+
+        {/* Modal Container */}
+        <div className="bg-zinc-950 rounded-[2.5rem] shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col md:flex-row border border-white/5 relative z-10 mx-auto min-h-[600px]">
           {!currentUser && (
             <button
               onClick={() => setIsAuthModalOpen(false)}
-              className="absolute top-4 right-4 z-20 p-2 text-slate-400 hover:text-white"
+              className="absolute top-6 right-6 z-20 p-2 text-zinc-400 hover:text-white transition-colors hover:bg-white/5 rounded-full"
             >
               <XCircle className="w-6 h-6" />
             </button>
           )}
-          <div className="bg-orange-600 p-8 md:w-1/2 flex flex-col justify-center text-white relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80')] bg-cover opacity-20"></div>
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-6">
-                <div className="bg-white/20 p-2 rounded-lg backdrop-blur-md">
-                  <Calendar className="w-8 h-8 text-white" />
+
+          {/* Left Panel - Hero/Promo */}
+          <div className="hidden md:flex md:w-[45%] bg-gradient-to-br from-slate-900 to-zinc-900 relative p-8 flex-col items-center justify-center text-center overflow-hidden border-r border-white/5">
+            {/* Background Pattern */}
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
+
+            {/* Decorative Cosmic Elements */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-white/5 rounded-full animate-[spin_20s_linear_infinite]"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[280px] border border-white/5 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+
+            {/* Floating Title */}
+            <div className="relative z-10 mb-12">
+              <h1 className="text-4xl font-black font-outfit text-slate-200 tracking-tight mb-2">EventHorizon</h1>
+              <p className="text-slate-400 text-sm font-medium tracking-widest uppercase opacity-60">Premium Experiences</p>
+            </div>
+
+            {/* Floating Feature Cards (Mimicking Reference) */}
+            <div className="relative w-full max-w-xs aspect-square">
+              {/* Center Image/Icon */}
+
+
+              {/* Orbital Cards */}
+              <div className="absolute top-0 right-0 animate-bounce delay-700">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 text-slate-300 px-4 py-2 rounded-2xl shadow-lg flex items-center gap-2 transform rotate-6">
+                  <Sparkles className="w-4 h-4 text-orange-400/80" />
+                  <span className="text-xs font-bold">AI Planner</span>
                 </div>
-                <h1 className="text-3xl font-bold">EventHorizon</h1>
               </div>
-              <p className="text-orange-100 text-lg mb-8 leading-relaxed">
-                The all-in-one platform for seamless event management. Create events, register attendees, and check them in with ease.
-              </p>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-orange-300" />
-                  <span>AI-Powered Event Creation</span>
+
+              <div className="absolute bottom-8 left-0 animate-bounce delay-1000">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 text-slate-300 px-4 py-2 rounded-2xl shadow-lg flex items-center gap-2 transform -rotate-3">
+                  <Ticket className="w-4 h-4 text-rose-400/80" />
+                  <span className="text-xs font-bold">Instant Tix</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-orange-300" />
-                  <span>QR Code Ticketing & Check-in</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-orange-300" />
-                  <span>Instant Approval Workflow</span>
+              </div>
+
+              <div className="absolute top-1/2 -right-8 animate-bounce delay-300">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 text-slate-300 px-4 py-2 rounded-2xl shadow-lg flex items-center gap-2 transform rotate-2">
+                  <QrCode className="w-4 h-4 text-indigo-400/80" />
+                  <span className="text-xs font-bold">Smart Check-in</span>
                 </div>
               </div>
             </div>
+
+            <div className="mt-12 relative z-10">
+              <p className="text-slate-300 text-lg font-bold">Host & Attend</p>
+              <p className="text-slate-500 text-sm mt-1">Join the community of 10,000+ organizers</p>
+            </div>
           </div>
 
-          <div className="p-8 md:w-1/2 flex flex-col justify-center">
-            <div className="max-w-sm mx-auto w-full">
-              <h2 className="text-2xl font-bold text-white mb-2">
-                {isAuthMode === 'signin' ? 'Welcome back' : isAuthMode === 'forgot-password' ? 'Reset Password' : 'Create an account'}
-              </h2>
-              <p className="text-slate-400 mb-8 italic">
-                {isAuthMode === 'signin' ? 'Please enter your details to sign in.' : isAuthMode === 'forgot-password' ? 'Enter your email to receive a reset link.' : 'Get started with EventHorizon today.'}
-              </p>
+          {/* Right Panel - Auth Methods */}
+          <div className="w-full md:w-[55%] p-8 md:p-12 bg-zinc-950 flex flex-col justify-center items-center relative">
+            <div className="w-full max-w-sm">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold text-white mb-2 font-outfit">
+                  {isAuthMode === 'signin' ? 'Welcome Back' : isAuthMode === 'forgot-password' ? 'Reset Password' : 'Create Account'}
+                </h2>
+                <p className="text-zinc-500 text-sm">
+                  {isAuthMode === 'signin' ? 'Access your dashboard using your preferred method.' : 'Enter your details to get started.'}
+                </p>
+              </div>
 
-              {(isAuthMode === 'signin' || isAuthMode === 'signup') && (
-                <div className="mb-8 flex p-1.5 liquid-glass rounded-2xl border border-white/5 w-fit mx-auto lg:mx-0">
-                  <button
-                    onClick={() => setLoginMethod('email')}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${loginMethod === 'email' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    E-Mail
-                  </button>
-                  <button
-                    onClick={() => setLoginMethod('phone')}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${loginMethod === 'phone' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    Phone
-                  </button>
+              {/* Social Login - TOP Priority (Like Reference) */}
+              {isAuthMode !== 'forgot-password' && (
+                <button
+                  onClick={async () => {
+                    setAuthLoading(true);
+                    try {
+                      const role = isAuthMode === 'signup' ? authForm.role : 'attendee';
+                      const user = await loginWithGoogle(role);
+                      if (user) {
+                        setCurrentUser(user);
+                        addToast('Welcome back!', 'success');
+                      } else {
+                        addToast('Google Sign In failed', 'error');
+                      }
+                    } catch (e) {
+                      console.error(e);
+                      addToast('Something went wrong', 'error');
+                    } finally {
+                      setAuthLoading(false);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-3 bg-white text-black py-3.5 rounded-full font-bold hover:bg-zinc-200 transition-all active:scale-[0.98] border border-zinc-200 shadow-sm mb-6"
+                >
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                  <span>Continue with Google</span>
+                </button>
+              )}
+
+              {/* Divider */}
+              {isAuthMode !== 'forgot-password' && (
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-zinc-800"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase tracking-widest font-bold">
+                    <span className="px-3 bg-zinc-950 text-zinc-600">Or continue with email</span>
+                  </div>
                 </div>
               )}
 
+              {/* Main Form */}
               {isAuthMode === 'forgot-password' ? (
                 <form onSubmit={handlePasswordReset} className="space-y-4">
-                  <div>
-                    <label htmlFor="reset-email" className="block text-sm font-medium text-slate-300 mb-1">Email for Reset</label>
-                    <div className="relative">
-                      <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
-                      <input
-                        id="reset-email"
-                        type="email"
-                        required
-                        placeholder="you@example.com"
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                        value={resetEmail}
-                        onChange={e => setResetEmail(e.target.value)}
-                      />
-                    </div>
+                  <div className="group text-left">
+                    <label htmlFor="reset-email" className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Email Address</label>
+                    <input
+                      id="reset-email"
+                      type="email"
+                      required
+                      placeholder="name@example.com"
+                      className="w-full px-5 py-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 outline-none transition-all placeholder:text-zinc-700"
+                      value={resetEmail}
+                      onChange={e => setResetEmail(e.target.value)}
+                    />
                   </div>
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-70 flex items-center justify-center"
+                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-full transition-all shadow-lg shadow-orange-900/20 mt-4"
                   >
-                    {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Send Reset Link'}
+                    {authLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Send Reset Link'}
                   </button>
-
-                  <div className="bg-amber-50 text-amber-800 text-xs p-3 rounded-lg flex items-start gap-2">
-                    <div className="mt-0.5 shrink-0">⚠️</div>
-                    <p>Note: If you signed up with Google, you don't have a password to reset. Please sign in with Google instead.</p>
-                  </div>
-
                   <button
                     type="button"
                     onClick={() => setIsAuthMode('signin')}
-                    className="w-full text-slate-400 text-sm hover:underline mt-2"
+                    className="w-full text-zinc-500 text-sm font-medium hover:text-white transition-colors py-2"
                   >
-                    Back to Sign In
+                    Cancel
                   </button>
                 </form>
               ) : (
                 <div className="space-y-4">
-                  {isAuthMode === 'signup' && (
-                    <div>
-                      <label htmlFor="signup-name" className="block text-sm font-medium text-slate-300 mb-1">Full Name</label>
-                      <div className="relative">
-                        <UserCircle className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
-                        <input
-                          id="signup-name"
-                          type="text"
-                          required
-                          placeholder="John Doe"
-                          className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                          value={authForm.name}
-                          onChange={e => setAuthForm({ ...authForm, name: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  )}
-
+                  {/* Email/Phone Toggle */}
                   {isAuthMode === 'signin' && (
-                    <div className="flex bg-slate-900 rounded-lg p-1 mb-6">
+                    <div className="flex p-1 bg-zinc-900 rounded-full border border-zinc-800 mb-6 relative">
                       <button
-                        type="button"
                         onClick={() => { setLoginMethod('email'); setShowOtpInput(false); }}
-                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'email' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
+                        className={`flex-1 py-1.5 rounded-full text-xs font-bold uppercase transition-all relative z-10 ${loginMethod === 'email' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Email
                       </button>
                       <button
-                        type="button"
                         onClick={() => setLoginMethod('phone')}
-                        className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${loginMethod === 'phone' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-300'}`}
+                        className={`flex-1 py-1.5 rounded-full text-xs font-bold uppercase transition-all relative z-10 ${loginMethod === 'phone' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Phone
                       </button>
+                      <div
+                        className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-zinc-800 rounded-full transition-all duration-300 shadow-md ${loginMethod === 'phone' ? 'left-[50%]' : 'left-1'}`}
+                      ></div>
+                    </div>
+                  )}
+
+                  {isAuthMode === 'signup' && (
+                    <div className="text-left">
+                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="John Doe"
+                        className="w-full px-5 py-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-zinc-700"
+                        value={authForm.name}
+                        onChange={e => setAuthForm({ ...authForm, name: e.target.value })}
+                      />
                     </div>
                   )}
 
                   {(loginMethod === 'email' || isAuthMode === 'signup') ? (
                     <>
-                      <div>
-                        <label htmlFor="auth-email" className="block text-sm font-medium text-slate-300 mb-1">Email</label>
-                        <div className="relative">
-                          <Mail className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
-                          <input
-                            id="auth-email"
-                            type="email"
-                            required
-                            placeholder="you@example.com"
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                            value={authForm.email}
-                            onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
-                          />
-                        </div>
+                      <div className="text-left">
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Email</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="name@work.com"
+                          className="w-full px-5 py-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-zinc-700"
+                          value={authForm.email}
+                          onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
+                        />
                       </div>
-
-                      <div>
-                        <label htmlFor="auth-password" className="block text-sm font-medium text-slate-300 mb-1">Password</label>
-                        <div className="relative">
-                          <KeyRound className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
-                          <input
-                            id="auth-password"
-                            type="password"
-                            required
-                            placeholder="••••••••"
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                            value={authForm.password}
-                            onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
-                          />
-                        </div>
+                      <div className="text-left">
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          className="w-full px-5 py-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-zinc-700"
+                          value={authForm.password}
+                          onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
+                        />
                       </div>
                     </>
                   ) : (
-                    <>
+                    <div className="text-left">
                       {!showOtpInput ? (
-                        <div>
-                          <label htmlFor="auth-phone" className="block text-sm font-medium text-slate-300 mb-1">Phone Number</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-2.5 text-slate-500 text-sm">📞</span>
-                            <input
-                              id="auth-phone"
-                              type="tel"
-                              required
-                              placeholder="+1 555 123 4567"
-                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-                              value={phoneNumber}
-                              onChange={e => setPhoneNumber(e.target.value)}
-                            />
-                          </div>
-                        </div>
+                        <>
+                          <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Phone Number</label>
+                          <input
+                            type="tel"
+                            required
+                            placeholder="+1 555 000 0000"
+                            className="w-full px-5 py-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all placeholder:text-zinc-700"
+                            value={phoneNumber}
+                            onChange={e => setPhoneNumber(e.target.value)}
+                          />
+                        </>
                       ) : (
-                        <div>
-                          <label htmlFor="auth-otp" className="block text-sm font-medium text-slate-300 mb-1">Enter OTP</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-2.5 text-slate-500 text-sm">🔒</span>
-                            <input
-                              id="auth-otp"
-                              type="text"
-                              required
-                              placeholder="123456"
-                              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none tracking-widest text-center"
-                              value={otp}
-                              onChange={e => setOtp(e.target.value)}
-                            />
-                          </div>
-                        </div>
+                        <>
+                          <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">One-Time Password</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="123456"
+                            className="w-full px-5 py-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all text-center tracking-[0.5em] font-bold text-lg"
+                            value={otp}
+                            onChange={e => setOtp(e.target.value)}
+                          />
+                        </>
                       )}
-                    </>
+                    </div>
                   )}
 
                   {isAuthMode === 'signup' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">I am a...</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setAuthForm({ ...authForm, role: 'attendee' })}
-                          className={`py-2 px-4 rounded-lg text-sm font-medium border ${authForm.role === 'attendee'
-                            ? 'bg-orange-900/40 border-orange-500 text-orange-400'
-                            : 'bg-slate-950 border-slate-700 text-slate-400 hover:bg-slate-800'
-                            }`}
-                        >
-                          Participant
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAuthForm({ ...authForm, role: 'organizer' })}
-                          className={`py-2 px-4 rounded-lg text-sm font-medium border ${authForm.role === 'organizer'
-                            ? 'bg-orange-900/40 border-orange-500 text-orange-400'
-                            : 'bg-slate-950 border-slate-700 text-slate-400 hover:bg-slate-800'
-                            }`}
-                        >
-                          Organizer
-                        </button>
-                      </div>
+                    <div className="flex gap-2 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setAuthForm({ ...authForm, role: 'attendee' })}
+                        className={`flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${authForm.role === 'attendee' ? 'bg-orange-600/20 border-orange-600 text-orange-500' : 'border-zinc-800 text-zinc-500 hover:border-zinc-600'}`}
+                      >
+                        Participant
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAuthForm({ ...authForm, role: 'organizer' })}
+                        className={`flex-1 py-3 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${authForm.role === 'organizer' ? 'bg-orange-600/20 border-orange-600 text-orange-500' : 'border-zinc-800 text-zinc-500 hover:border-zinc-600'}`}
+                      >
+                        Organizer
+                      </button>
                     </div>
                   )}
 
@@ -1706,102 +1747,34 @@ export default function App() {
                         handleLogin(e);
                       }
                     }}
-                    className="w-full bg-orange-600 text-white py-2 rounded-lg font-medium hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-full transition-all shadow-lg shadow-orange-900/20 mt-4 active:scale-[0.98]"
                   >
-                    {authLoading ? 'Please wait...' : (
+                    {authLoading ? 'Processing...' : (
                       isAuthMode === 'signup'
-                        ? 'Create Account'
+                        ? 'Sign Up'
                         : (loginMethod === 'phone'
-                          ? (showOtpInput ? 'Verify OTP' : 'Send OTP')
+                          ? (showOtpInput ? 'Verify & Login' : 'Send Code')
                           : 'Sign In')
                     )}
                   </button>
-
-                  {isAuthMode === 'signin' && loginMethod === 'email' && (
-                    <div className="flex justify-end mt-1">
-                      <button
-                        type="button"
-                        onClick={() => { setIsAuthMode('forgot-password'); setResetEmail(''); }}
-                        className="text-orange-400 text-xs hover:underline"
-                      >
-                        Forgot Password?
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
 
-              {isAuthMode !== 'forgot-password' && (
-                <>
-                  <div className="relative my-6">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-700"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                      <span className="px-2 bg-slate-900 text-slate-500">Or continue with</span>
-                    </div>
-                  </div>
+              <div className="mt-8 text-center text-xs text-zinc-500">
+                {isAuthMode === 'signin' ? "Don't have an account? " : "Already have an account? "}
+                <button
+                  onClick={() => setIsAuthMode(isAuthMode === 'signin' ? 'signup' : 'signin')}
+                  className="font-bold text-orange-500 hover:text-orange-400"
+                >
+                  {isAuthMode === 'signin' ? 'Sign up' : 'Login'}
+                </button>
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setAuthLoading(true);
-                      try {
-                        // Default role for Google Login if new user? 
-                        // We can default to attendee, or rely on them being prompted later? 
-                        // For now, let's assume 'attendee' if not specified, 
-                        // but ideally the user should pick role first if it's signup.
-                        // However, for simplicity here, we pass the role currently selected in form if in signup mode, 
-                        // or 'attendee' if in signin mode (though signin doesn't matter if user exists).
-                        const role = isAuthMode === 'signup' ? authForm.role : 'attendee';
-                        const user = await loginWithGoogle(role);
-                        if (user) {
-                          setCurrentUser(user);
-                          addToast('Welcome back!', 'success');
-                        } else {
-                          addToast('Google Sign In failed', 'error');
-                        }
-                      } catch (e) {
-                        console.error(e);
-                        addToast('Something went wrong', 'error');
-                      } finally {
-                        setAuthLoading(false);
-                      }
-                    }}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-950 border border-slate-700 text-slate-300 py-2 rounded-lg font-medium hover:bg-slate-900 transition-colors"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24">
-                      <path
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        fill="#4285F4"
-                      />
-                      <path
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        fill="#34A853"
-                      />
-                      <path
-                        d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z"
-                        fill="#FBBC05"
-                      />
-                      <path
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z"
-                        fill="#EA4335"
-                      />
-                    </svg>
-                    Google
-                  </button>
-
-                  <div className="mt-6 text-center text-sm text-slate-400">
-                    {isAuthMode === 'signin' ? "Don't have an account? " : "Already have an account? "}
-                    <button
-                      onClick={() => setIsAuthMode(isAuthMode === 'signin' ? 'signup' : 'signin')}
-                      className="font-semibold text-orange-400 hover:text-orange-300"
-                    >
-                      {isAuthMode === 'signin' ? 'Sign up' : 'Sign in'}
-                    </button>
-                  </div>
-                </>
-              )}
+              <div className="mt-8 border-t border-zinc-900 pt-6">
+                <p className="text-[10px] text-zinc-600 text-center leading-relaxed">
+                  By signing in, you agree to our <span className="text-zinc-500 underline cursor-pointer">Terms of Service</span> and acknowledge our <span className="text-zinc-500 underline cursor-pointer">Privacy Policy</span>.
+                </p>
+              </div>
             </div>
           </div>
         </div>

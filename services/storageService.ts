@@ -1009,18 +1009,38 @@ export const verifyPhoneOtp = async (confirmationResult: ConfirmationResult, otp
   try {
     const result = await confirmationResult.confirm(otp);
     const user = result.user;
-    const phoneNumber = user.phoneNumber;
+    const phoneNumber = user.phoneNumber; // E.164 format from Firebase (e.g. +16505550101)
 
     // First try: Find user by phone number (in case they signed up with email first)
     let profile = null;
     if (phoneNumber) {
+      // Create variations to search for (E.164, without +, etc)
+      const variations = [
+        phoneNumber,
+        phoneNumber.replace('+', ''),
+        phoneNumber.slice(-10),
+      ];
+      const uniqueVariations = [...new Set(variations)];
+
       if (USE_MONGO) {
-        const res = await mongoRequest('findOne', 'users', { filter: { phoneNumber } });
-        profile = res.document || null;
+        for (const variation of uniqueVariations) {
+          const res = await mongoRequest('findOne', 'users', { filter: { phoneNumber: variation } });
+          if (res.document) {
+            console.log("[VerifyOTP] Found user by variation:", variation);
+            profile = res.document;
+            break;
+          }
+        }
       } else if (USE_FIREBASE_STORAGE) {
-        const q = query(collection(db, "users"), where("phoneNumber", "==", phoneNumber));
-        const snap = await getDocs(q);
-        profile = !snap.empty ? (snap.docs[0].data() as User) : null;
+        for (const variation of uniqueVariations) {
+          const q = query(collection(db, "users"), where("phoneNumber", "==", variation));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            console.log("[VerifyOTP] Found user by variation:", variation);
+            profile = snap.docs[0].data() as User;
+            break;
+          }
+        }
       }
     }
 
@@ -1041,10 +1061,13 @@ export const verifyPhoneOtp = async (confirmationResult: ConfirmationResult, otp
         bio: ''
       };
       await saveUserProfile(profile);
-    } else if (profile && !profile.phoneNumber && phoneNumber) {
-      // If profile exists but phone wasn't set (unlikely if logic is right, but safe to sync)
-      profile.phoneNumber = phoneNumber;
-      await saveUserProfile(profile);
+    } else {
+      // Profile found!
+      // IMPORTANT: Ensure the phone number in DB matches the standardized one from Firebase for future lookups
+      if (profile.phoneNumber !== phoneNumber && phoneNumber) {
+        profile.phoneNumber = phoneNumber;
+        await saveUserProfile(profile);
+      }
     }
 
     return profile;

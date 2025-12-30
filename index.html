@@ -5,6 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EventHorizon</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
@@ -87,6 +88,25 @@
       to {
         background-position: 200% center;
       }
+    }
+
+    @keyframes pan-galaxy {
+      0% {
+        transform: scale(1) rotate(0deg);
+      }
+
+      50% {
+        transform: scale(1.1) rotate(1deg);
+      }
+
+      100% {
+        transform: scale(1) rotate(0deg);
+      }
+    }
+
+    .animate-galaxy {
+      animation: pan-galaxy 30s ease-in-out infinite;
+      will-change: transform;
     }
 
     /* Animated Border System */
