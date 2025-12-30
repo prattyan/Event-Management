@@ -77,27 +77,33 @@ export const getInitialData = async (userId?: string) => {
   if (USE_MONGO) {
     try {
       const requests = [
-        // 1. Events
+        // 1. Events (Increased limit for organizers, lightweight projection)
         {
           collection: 'events',
           action: 'find',
           filter: {},
-          limit: 12,
+          limit: 500,
           projection: { imageUrl: 0, description: 0 },
-          sort: { date: -1 } // Added to satisfy TS type inference for later push
+          sort: { date: -1 }
         },
-        // 2. Registrations
+        // 2. Registrations (Fetch all to ensure consistency for now, can be optimized later)
         {
           collection: 'registrations',
           action: 'find',
           filter: {},
         },
-        // 3. Notifications (Requested always, even for guests)
+        // 3. Notifications
         {
           collection: 'notifications',
           action: 'find',
           filter: { userId: userId || "" },
           sort: { createdAt: -1 }
+        },
+        // 4. Teams (Fetch all for client-side filtering to avoid N+1 requests)
+        {
+          collection: 'teams',
+          action: 'find',
+          filter: {},
         }
       ];
 
@@ -121,7 +127,12 @@ export const getInitialData = async (userId?: string) => {
           id: doc.id || doc._id
         }));
 
-        return { events, registrations, notifications };
+        const teams = (response.results[3]?.documents || []).map((doc: any) => ({
+          ...doc,
+          id: doc.id || doc._id
+        }));
+
+        return { events, registrations, notifications, teams };
       }
     } catch (e) {
       console.error("Batch fetch failed", e);
@@ -132,8 +143,7 @@ export const getInitialData = async (userId?: string) => {
     getEvents(),
     getRegistrations()
   ]);
-  // Note: Notifications handled separately in fallback usually, but here we return empty or let caller handle
-  return { events, registrations, notifications: [] };
+  return { events, registrations, notifications: [], teams: [] };
 };
 
 // --- Events ---

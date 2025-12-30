@@ -40,20 +40,20 @@ const ToastContainer = ({ toasts }: { toasts: Toast[] }) => (
           initial={{ opacity: 0, y: 20, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-          className={`pointer - events - auto border - 2 shadow - [0_20px_50px_rgba(0, 0, 0, 0.5)] rounded - [24px] px - 7 py - 5 text - sm font - black flex items - center gap - 4 relative overflow - hidden
+          className={`pointer-events-auto border-2 shadow-[0_20px_50px_rgba(0,0,0,0.5)] rounded-[24px] px-7 py-5 text-sm font-black flex items-center gap-4 relative overflow-hidden
             ${t.type === 'success' ? 'bg-[#020617] border-green-500/30 text-green-400' :
               t.type === 'error' ? 'bg-[#020617] border-red-500/30 text-red-400' :
                 t.type === 'warning' ? 'bg-[#020617] border-amber-500/30 text-amber-400' :
                   'bg-[#020617] border-orange-500/30 text-orange-400'
             } `}
         >
-          <div className={`absolute - inset - 1 opacity - 20 blur - xl - z - 10 ${t.type === 'success' ? 'bg-green-500' :
+          <div className={`absolute -inset-1 opacity-20 blur-xl -z-10 ${t.type === 'success' ? 'bg-green-500' :
             t.type === 'error' ? 'bg-red-500' :
               t.type === 'warning' ? 'bg-amber-500' :
                 'bg-orange-500'
             } `} />
 
-          <div className={`p - 2 rounded - xl flex - shrink - 0 ${t.type === 'success' ? 'bg-green-500/20' :
+          <div className={`p-2 rounded-xl flex-shrink-0 ${t.type === 'success' ? 'bg-green-500/20' :
             t.type === 'error' ? 'bg-red-500/20' :
               t.type === 'warning' ? 'bg-amber-500/20' :
                 'bg-orange-500/20'
@@ -182,9 +182,25 @@ const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<string> => {
         return;
       }
 
-      canvas.width = pixelCrop.width;
-      canvas.height = pixelCrop.height;
+      // Max dimension logic to prevent massive base64 strings
+      const MAX_DIMENSION = 1024;
+      let targetWidth = pixelCrop.width;
+      let targetHeight = pixelCrop.height;
 
+      if (targetWidth > MAX_DIMENSION || targetHeight > MAX_DIMENSION) {
+        if (targetWidth > targetHeight) {
+          targetHeight = (targetHeight / targetWidth) * MAX_DIMENSION;
+          targetWidth = MAX_DIMENSION;
+        } else {
+          targetWidth = (targetWidth / targetHeight) * MAX_DIMENSION;
+          targetHeight = MAX_DIMENSION;
+        }
+      }
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      // Draw and resize
       ctx.drawImage(
         image,
         pixelCrop.x,
@@ -193,11 +209,12 @@ const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<string> => {
         pixelCrop.height,
         0,
         0,
-        pixelCrop.width,
-        pixelCrop.height
+        targetWidth,
+        targetHeight
       );
 
-      resolve(canvas.toDataURL('image/jpeg'));
+      // Compress to 0.8 quality to further reduce size
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
     };
     image.onerror = (e) => reject(e);
   });
@@ -474,13 +491,16 @@ export default function App() {
       const evts = initialData.events || [];
       const regs = initialData.registrations || [];
       const notifs = initialData.notifications || [];
+      const fetchedTeams = initialData.teams || [];
 
       setEvents(evts);
       setRegistrations(regs);
       setNotifications(notifs);
+      setTeams(fetchedTeams);
 
-      if (currentUser) {
-        // Fetch teams for events user is registered for AND events they organize (if organizer)
+      // Legacy fallback logic removed as getInitialData now handles batch fetching for teams
+      if (currentUser && fetchedTeams.length === 0 && !initialData.teams) {
+        // Only run this if we are using a legacy storageService that didn't return teams (unlikely now)
         const userEventIds = regs.filter(r => r.participantEmail === currentUser.email).map(r => r.eventId);
         const organizedEventIds = currentUser.role === 'organizer' ? evts.filter(e => e.organizerId === currentUser.id).map(e => e.id) : [];
         const allEventIdsToFetchTeams = Array.from(new Set([...userEventIds, ...organizedEventIds]));
@@ -834,9 +854,10 @@ export default function App() {
   };
 
   const handleEditClick = async (event: AppEvent) => {
-    // Fetch full event details to ensure description/imageUrl are present
+    // 1. Fetch text details first (Fast)
     addToast('Loading event details...', 'info');
-    const fullEvent = await getEventById(event.id);
+    const fullEvent = await getEventById(event.id, { excludeImage: true });
+
     if (!fullEvent) {
       addToast('Failed to load full event data', 'error');
       return;
@@ -849,6 +870,7 @@ export default function App() {
     const dateStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     const endDateStr = ed.getFullYear() + '-' + pad(ed.getMonth() + 1) + '-' + pad(ed.getDate()) + 'T' + pad(ed.getHours()) + ':' + pad(ed.getMinutes());
 
+    // 2. Open Modal Immediately with what we have (Image might be empty initially)
     setNewEvent({
       title: fullEvent.title,
       date: dateStr,
@@ -857,7 +879,7 @@ export default function App() {
       locationType: fullEvent.locationType || 'offline',
       description: fullEvent.description,
       capacity: fullEvent.capacity.toString(),
-      imageUrl: fullEvent.imageUrl || '',
+      imageUrl: fullEvent.imageUrl || '', // Likely empty string here if excluded
       customQuestions: fullEvent.customQuestions || [],
       collaboratorEmails: fullEvent.collaboratorEmails || [],
       participationMode: fullEvent.participationMode || 'individual',
@@ -866,6 +888,17 @@ export default function App() {
     setEditingEventId(fullEvent.id);
     setIsEditMode(true);
     setIsCreateModalOpen(true);
+
+    // 3. Fetch Image in Background (Slow part)
+    // We only fetch if we didn't get it (which we intentionally didn't)
+    try {
+      const imageStr = await getEventImage(fullEvent.id);
+      if (imageStr) {
+        setNewEvent(prev => ({ ...prev, imageUrl: imageStr }));
+      }
+    } catch (e) {
+      console.error("Background image fetch failed", e);
+    }
   };
 
   const handleSaveEvent = async (e: React.FormEvent) => {
