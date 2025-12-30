@@ -629,6 +629,31 @@ export default function App() {
     hydrateEvent();
   }, [selectedEventForDetails?.id]); // Only run if ID changes
 
+  // Fallback: Fetch missing team details if viewing registration
+  useEffect(() => {
+    const fetchMissingTeam = async () => {
+      if (selectedRegistrationDetails?.participationType === 'team' && selectedRegistrationDetails.teamId) {
+        const isTeamLoaded = teams.some(t => t.id === selectedRegistrationDetails.teamId);
+
+        if (!isTeamLoaded) {
+          try {
+            const team = await getTeamById(selectedRegistrationDetails.teamId);
+            if (team) {
+              setTeams(prev => {
+                if (prev.some(t => t.id === team.id)) return prev;
+                return [...prev, team];
+              });
+            }
+          } catch (e) {
+            console.error("Failed to fetch missing team details", e);
+          }
+        }
+      }
+    };
+
+    fetchMissingTeam();
+  }, [selectedRegistrationDetails, teams]);
+
   // Event Reminders Polling
   useEffect(() => {
     const checkReminders = async () => {
@@ -1117,6 +1142,7 @@ export default function App() {
             inviteCode: '' // filled by service
           });
           if (team) {
+            setTeams(prev => [...prev, team]);
             finalRegData.teamId = team.id;
             finalRegData.teamName = team.name;
             finalRegData.isTeamLeader = true;
@@ -1846,13 +1872,13 @@ export default function App() {
   const renderHeader = () => (
     <header className="fixed top-6 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8 pointer-events-none">
       <div className="max-w-7xl mx-auto pointer-events-auto">
-        <div className={`liquid-glass rounded-full border px-6 h-20 flex items-center justify-between shadow-2xl animate-in slide-in-from-top-4 duration-1000 transition-all ${isScrolled ? 'bg-white/[0.02] backdrop-blur-[12px] border-white/20 shadow-sm' : 'border-white/10 backdrop-blur-xl'}`}>
+        <div className={`liquid-glass rounded-full border px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between shadow-2xl animate-in slide-in-from-top-4 duration-1000 transition-all ${isScrolled ? 'bg-white/[0.02] backdrop-blur-[12px] border-white/20 shadow-sm' : 'border-white/10 backdrop-blur-xl'}`}>
           <div className="flex items-center group cursor-pointer" onClick={() => setActiveTab('browse')}>
             <div className="flex flex-col">
-              <span className="text-2xl font-black font-outfit tracking-tighter text-refraction drop-shadow-lg">
+              <span className="text-xl sm:text-2xl font-black font-outfit tracking-tighter text-refraction drop-shadow-lg">
                 EventHorizon
               </span>
-              <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-orange-400 -mt-1 pl-0.5">Premium Events</span>
+              <span className="text-[8px] sm:text-[10px] uppercase tracking-[0.2em] sm:tracking-[0.3em] font-bold text-orange-400 -mt-0.5 sm:-mt-1 pl-0.5">Premium Events</span>
             </div>
           </div>
 

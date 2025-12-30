@@ -104,6 +104,7 @@ export const getInitialData = async (userId?: string) => {
           collection: 'teams',
           action: 'find',
           filter: {},
+          sort: { createdAt: -1 }
         }
       ];
 
