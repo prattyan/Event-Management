@@ -1483,14 +1483,7 @@ export default function App() {
 
         {/* Modal Container */}
         <div className="bg-zinc-950 rounded-[2.5rem] shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col md:flex-row border border-white/5 relative z-10 mx-auto min-h-[600px]">
-          {!currentUser && (
-            <button
-              onClick={() => setIsAuthModalOpen(false)}
-              className="absolute top-6 right-6 z-20 p-2 text-zinc-400 hover:text-white transition-colors hover:bg-white/5 rounded-full"
-            >
-              <XCircle className="w-6 h-6" />
-            </button>
-          )}
+
 
           {/* Left Panel - Hero/Promo */}
           <div className="hidden md:flex md:w-[45%] bg-gradient-to-br from-slate-900 to-zinc-900 relative p-8 flex-col items-center justify-center text-center overflow-hidden border-r border-white/5">
@@ -1536,9 +1529,10 @@ export default function App() {
               </div>
             </div>
 
-            <div className="mt-12 relative z-10">
-              <p className="text-slate-300 text-lg font-bold">Host & Attend</p>
-              <p className="text-slate-500 text-sm mt-1">Join the community of 10,000+ organizers</p>
+            <div className="mt-16 relative z-10 flex flex-col items-center">
+              <div className="h-px w-12 bg-gradient-to-r from-transparent via-white/20 to-transparent mb-6"></div>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-[0.2em] mb-2">Host & Attend</p>
+              <p className="text-transparent bg-clip-text bg-gradient-to-r from-slate-200 to-slate-400 text-sm font-medium">Join the community of 10,000+ organizers</p>
             </div>
           </div>
 
@@ -1547,7 +1541,7 @@ export default function App() {
             <div className="w-full max-w-sm">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold text-white mb-2 font-outfit">
-                  {isAuthMode === 'signin' ? 'Welcome Back' : isAuthMode === 'forgot-password' ? 'Reset Password' : 'Create Account'}
+                  {isAuthMode === 'signin' ? 'Welcome Back' : isAuthMode === 'forgot-password' ? 'Reset Password' : 'Welcome to EventHorizon'}
                 </h2>
                 <p className="text-zinc-500 text-sm">
                   {isAuthMode === 'signin' ? 'Access your dashboard using your preferred method.' : 'Enter your details to get started.'}
