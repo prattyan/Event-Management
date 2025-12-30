@@ -130,6 +130,20 @@
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
+
+    /* Dark Mode Calendar Icons */
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+
+    input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+      opacity: 1;
+    }
   </style>
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#d97757" />
