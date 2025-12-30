@@ -21,7 +21,7 @@ const LiquidChrome = () => {
         `;
 
         const fragmentShaderSource = `
-            precision highp float;
+            precision mediump float;
             uniform float u_time;
             uniform vec2 u_resolution;
             uniform vec2 u_mouse;
@@ -56,44 +56,35 @@ const LiquidChrome = () => {
             }
 
             void main() {
+                // Normalized pixel coordinates (from 0 to 1)
                 vec2 uv = gl_FragCoord.xy / u_resolution.xy;
                 uv.x *= u_resolution.x / u_resolution.y;
 
-                float time = u_time * 0.2;
+                float time = u_time * 0.1; // Slowed down for elegance
                 
-                // Mouse distortion
+                // Mouse interaction (Softened)
                 vec2 m = u_mouse / u_resolution;
                 m.x *= u_resolution.x / u_resolution.y;
                 float d = distance(uv, m);
-                float mouse_effect = smoothstep(0.5, 0.0, d) * 0.5;
+                float mouse_effect = smoothstep(0.4, 0.0, d) * 0.3; // Subtler interaction
 
-                // Layered noise for "liquid" feel
-                float n = snoise(uv * 1.8 + time) * 0.5;
-                n += snoise(uv * 4.0 - time * 0.4) * 0.25;
-                n += snoise(uv * 8.0 + time * 0.2) * 0.125;
+                // Layered noise
+                float n = snoise(uv * 1.5 + time) * 0.5;
+                n += snoise(uv * 3.0 - time * 0.5) * 0.25;
                 n += mouse_effect;
 
-                // Normal estimation for fake reflection
-                float eps = 0.005;
-                float n_x = (snoise((uv + vec2(eps, 0.0)) * 1.8 + time) - n) / eps;
-                float n_y = (snoise((uv + vec2(0.0, eps)) * 1.8 + time) - n) / eps;
-                vec3 normal = normalize(vec3(-n_x, -n_y, 0.4)); // Sharper normals
+                // Color Palette: Deep Space + Molten Gold/Orange
+                vec3 color_deep = vec3(0.01, 0.03, 0.08); // Midnight Blue/Black
+                vec3 color_accent = vec3(0.85, 0.35, 0.15); // Burnt Orange
+                vec3 color_highlight = vec3(1.0, 0.7, 0.3); // Soft Gold
 
-                // Fake environment lighting
-                vec3 light_dir = normalize(vec3(0.5, 0.8, 1.0));
-                float spec = pow(max(dot(normal, light_dir), 0.0), 60.0); // Sharper highlights
-                float diffuse = max(dot(normal, light_dir), 0.0) * 0.6;
-
-                // Color palette (Chrome / Silver with user preference for terracotta tints)
-                vec3 color_terracotta = vec3(0.95, 0.55, 0.4); // More vibrant
-                vec3 color_chrome = vec3(0.02, 0.02, 0.05); // Deeper blacks
+                // Mixing logic based on noise
+                float mix_val = smoothstep(-0.2, 0.8, n);
+                vec3 final_color = mix(color_deep, color_accent, mix_val * 0.6);
                 
-                vec3 final_color = mix(color_chrome, color_terracotta, diffuse * 0.4);
-                final_color += spec * 0.8; // Stronger glossy highlights
-                
-                // Fresnel effect for edge depth
-                float fresnel = pow(1.0 - normal.z, 2.5);
-                final_color += fresnel * color_terracotta * 0.6;
+                // Add highlights
+                float highlight_mix = smoothstep(0.4, 1.0, n);
+                final_color = mix(final_color, color_highlight, highlight_mix * 0.4);
 
                 gl_FragColor = vec4(final_color, 1.0);
             }
@@ -138,10 +129,13 @@ const LiquidChrome = () => {
 
         let mouseX = 0;
         let mouseY = 0;
-        window.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX;
-            mouseY = window.innerHeight - e.clientY;
-        });
+
+        // Passive event listener for better scrolling performance
+        const handleMouseMove = (e: MouseEvent) => {
+            mouseX = e.clientX * 0.5; // Scale to match canvas
+            mouseY = (window.innerHeight - e.clientY) * 0.5;
+        };
+        window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
         const render = (time: number) => {
             gl.viewport(0, 0, canvas.width, canvas.height);
@@ -153,8 +147,11 @@ const LiquidChrome = () => {
         };
 
         const handleResize = () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // Optimization: Render at 50% resolution
+            // This massively reduces GPU load (4x fewer pixels to shade)
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = (window.innerWidth * dpr) * 0.5;
+            canvas.height = (window.innerHeight * dpr) * 0.5;
         };
         window.addEventListener('resize', handleResize);
         handleResize();
@@ -163,6 +160,7 @@ const LiquidChrome = () => {
 
         return () => {
             window.removeEventListener('resize', handleResize);
+            window.removeEventListener('mousemove', handleMouseMove);
         };
     }, []);
 

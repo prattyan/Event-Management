@@ -223,11 +223,17 @@ app.post('/api/action/:action', async (req, res) => {
 
             case 'deleteOne':
                 result = await col.deleteOne(filter);
+                if (collection === 'events' || collection === 'registrations') {
+                    io.emit('data_updated', { collection, action: 'delete', filter });
+                }
                 res.json(result);
                 break;
 
             case 'deleteMany':
                 result = await col.deleteMany(filter);
+                if (collection === 'events' || collection === 'registrations') {
+                    io.emit('data_updated', { collection, action: 'delete_many', filter });
+                }
                 res.json(result);
                 break;
 

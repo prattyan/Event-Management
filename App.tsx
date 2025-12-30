@@ -228,6 +228,7 @@ export default function App() {
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isScrolled, setIsScrolled] = useState(false); // Scroll state for header effect
   const [isAuthMode, setIsAuthMode] = useState<'signin' | 'signup' | 'forgot-password'>('signin');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', role: 'attendee' as Role });
   const [resetEmail, setResetEmail] = useState('');
@@ -252,17 +253,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [otpPurpose, setOtpPurpose] = useState<'login' | 'profile' | 'deletion'>('login');
 
-  // Lock body scroll when auth modal is open
-  useEffect(() => {
-    if (isAuthModalOpen || !currentUser) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isAuthModalOpen, currentUser]);
+
 
   const renderLocation = (location: string, type: 'online' | 'offline', className?: string) => {
     const isLink = type === 'online' && (location.startsWith('http') || location.includes('.') || location.toLowerCase().includes('zoom') || location.toLowerCase().includes('google.com'));
@@ -348,8 +339,6 @@ export default function App() {
   // Auth Listener
   useEffect(() => {
     const unsubscribe = subscribeToAuth((user) => {
-      // Only update if we are not already logged in with this user to avoid jitter
-      // (though React handles this efficiently usually)
       setCurrentUser(user);
       if (user) {
         if (user.role === 'organizer') {
@@ -357,10 +346,24 @@ export default function App() {
         } else {
           setActiveTab('browse');
         }
+        loadData();
+      } else {
+        setEvents([]);
+        setRegistrations([]);
+        setNotifications([]);
       }
       setAuthLoading(false);
     });
-    return () => unsubscribe();
+
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener('scroll', handleScroll);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   // Socket.io Listener
@@ -412,6 +415,40 @@ export default function App() {
   const [profileForm, setProfileForm] = useState<{ name: string; email: string; avatarUrl?: string; phoneNumber?: string; isPhoneVerified?: boolean }>({ name: '', email: '' });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [cropPurpose, setCropPurpose] = useState<'event' | 'profile'>('event'); // Track what we are cropping
+
+  // Lock body scroll when any modal is open
+  useEffect(() => {
+    if (
+      isAuthModalOpen ||
+      !currentUser ||
+      isCreateModalOpen ||
+      isProfileModalOpen ||
+      selectedEventForDetails ||
+      selectedEventForReg ||
+      selectedTicket ||
+      selectedRegistrationDetails ||
+      isScannerOpen ||
+      isAnnouncementModalOpen
+    ) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [
+    isAuthModalOpen,
+    currentUser,
+    isCreateModalOpen,
+    isProfileModalOpen,
+    selectedEventForDetails,
+    selectedEventForReg,
+    selectedTicket,
+    selectedRegistrationDetails,
+    isScannerOpen,
+    isAnnouncementModalOpen
+  ]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1515,7 +1552,7 @@ export default function App() {
         </div>
 
         {/* Modal Container */}
-        <div className="bg-zinc-950 rounded-[2.5rem] shadow-2xl overflow-hidden max-w-5xl w-full flex flex-col md:flex-row border border-white/5 relative z-10 mx-auto min-h-[600px]">
+        <div className="bg-zinc-950 rounded-[2rem] md:rounded-[2.5rem] shadow-2xl overflow-hidden w-full max-w-lg md:max-w-5xl flex flex-col md:flex-row border border-white/5 relative z-10 mx-4 md:mx-auto min-h-0 md:min-h-[600px] my-auto">
 
 
           {/* Left Panel - Hero/Promo */}
@@ -1616,7 +1653,7 @@ export default function App() {
                     <div className="w-full border-t border-zinc-800"></div>
                   </div>
                   <div className="relative flex justify-center text-xs uppercase tracking-widest font-bold">
-                    <span className="px-3 bg-zinc-950 text-zinc-600">Or continue with email</span>
+                    <span className="px-3 bg-zinc-950 text-zinc-600">Or continue with email/ phone</span>
                   </div>
                 </div>
               )}
@@ -1733,7 +1770,7 @@ export default function App() {
                           <input
                             type="text"
                             required
-                            placeholder="123456"
+                            placeholder="******"
                             className="w-full px-5 py-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all text-center tracking-[0.5em] font-bold text-lg"
                             value={otp}
                             onChange={e => setOtp(e.target.value)}
@@ -1812,224 +1849,226 @@ export default function App() {
   // --- Authenticated Views ---
 
   const renderHeader = () => (
-    <header className="sticky top-0 z-40 liquid-glass border-b border-orange-500/10">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-        <div className="flex items-center group cursor-pointer" onClick={() => setActiveTab('browse')}>
-          <div className="flex flex-col">
-            <span className="text-2xl font-black font-outfit tracking-tighter text-refraction">
-              EventHorizon
-            </span>
-            <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-orange-400 -mt-1 pl-0.5">Premium Events</span>
+    <header className="fixed top-6 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8 pointer-events-none">
+      <div className="max-w-7xl mx-auto pointer-events-auto">
+        <div className={`liquid-glass rounded-full border px-6 h-20 flex items-center justify-between shadow-2xl animate-in slide-in-from-top-4 duration-1000 transition-all ${isScrolled ? 'bg-white/[0.02] backdrop-blur-[12px] border-white/20 shadow-sm' : 'border-white/10 backdrop-blur-xl'}`}>
+          <div className="flex items-center group cursor-pointer" onClick={() => setActiveTab('browse')}>
+            <div className="flex flex-col">
+              <span className="text-2xl font-black font-outfit tracking-tighter text-refraction drop-shadow-lg">
+                EventHorizon
+              </span>
+              <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-orange-400 -mt-1 pl-0.5">Premium Events</span>
+            </div>
           </div>
-        </div>
 
-        <nav className="hidden lg:flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/5 relative">
-          {[
-            { id: 'browse', label: 'Explore' },
-            { id: 'organizer', label: 'Dashboard', show: currentUser?.role === 'organizer' },
-            { id: 'my-tickets', label: 'My Tickets', show: currentUser?.role === 'attendee' }
-          ].filter(item => item.show !== false).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id as Tab)}
-              className={`relative px-6 py-2 rounded-xl text-sm font-black font-outfit transition-all duration-300 whitespace-nowrap z-10 ${activeTab === item.id ? 'text-white' : 'text-slate-400 hover:text-white'}`}
-            >
-              <span className="relative z-10">{item.label}</span>
-              {activeTab === item.id && (
-                <motion.div
-                  layoutId="header-pill"
-                  className="absolute inset-0 bg-orange-600 rounded-xl shadow-lg shadow-orange-600/30"
-                  transition={{ type: 'spring', bounce: 0.15, duration: 0.6 }}
-                />
-              )}
-            </button>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-2 md:gap-4">
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden p-3 rounded-xl bg-white/5 text-slate-400 hover:text-orange-400 transition-all border border-white/5"
-          >
-            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <MoreHorizontal className="w-5 h-5" />}
-          </button>
-
-          <AnimatePresence>
-            {isMobileMenuOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="absolute top-[88px] left-4 right-4 liquid-glass rounded-3xl border border-white/10 p-4 z-50 lg:hidden flex flex-col gap-2 shadow-2xl"
+          <nav className="hidden lg:flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/5 relative">
+            {[
+              { id: 'browse', label: 'Explore' },
+              { id: 'organizer', label: 'Dashboard', show: currentUser?.role === 'organizer' },
+              { id: 'my-tickets', label: 'My Tickets', show: currentUser?.role === 'attendee' }
+            ].filter(item => item.show !== false).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id as Tab)}
+                className={`relative px-6 py-2 rounded-xl text-sm font-black font-outfit transition-all duration-300 whitespace-nowrap z-10 ${activeTab === item.id ? 'text-white' : 'text-slate-400 hover:text-white'}`}
               >
-                {[
-                  { id: 'browse', label: 'Explore', icon: Sparkles },
-                  { id: 'organizer', label: 'Dashboard', show: currentUser?.role === 'organizer', icon: Layout },
-                  { id: 'my-tickets', label: 'My Tickets', show: currentUser?.role === 'attendee', icon: QrCode }
-                ].filter(item => item.show !== false).map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id as Tab);
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={`flex items-center gap-4 px-6 py-4 rounded-2xl text-sm font-bold font-outfit transition-all ${activeTab === item.id ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-                  >
-                    <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-white' : 'text-orange-500'}`} />
-                    {item.label}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div className="relative">
+                <span className="relative z-10">{item.label}</span>
+                {activeTab === item.id && (
+                  <motion.div
+                    layoutId="header-pill"
+                    className="absolute inset-0 bg-orange-600 rounded-xl shadow-lg shadow-orange-600/30"
+                    transition={{ type: 'spring', bounce: 0.15, duration: 0.6 }}
+                  />
+                )}
+              </button>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-2 md:gap-4">
             <button
-              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-              className={`p-3 rounded-xl transition-all relative ${isNotificationsOpen ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'bg-white/5 text-slate-400 hover:text-orange-400 hover:bg-white/10'}`}
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-3 rounded-xl bg-white/5 text-slate-400 hover:text-orange-400 transition-all border border-white/5"
             >
-              <Bell className="w-5 h-5" />
-              {notifications.filter(n => !n.read).length > 0 && (
-                <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-900 animate-pulse"></span>
-              )}
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <MoreHorizontal className="w-5 h-5" />}
             </button>
 
-            {isNotificationsOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setIsNotificationsOpen(false)}></div>
-                <div className="absolute right-0 mt-4 w-80 xs:w-96 liquid-glass rounded-3xl shadow-2xl border border-white/10 py-0 z-20 animate-in fade-in zoom-in-95 origin-top-right overflow-hidden flex flex-col max-h-[500px]">
-                  <div className="px-6 py-5 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                    <h3 className="text-lg font-bold text-white font-outfit">Notifications</h3>
-                    <span className="px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-400 text-[10px] font-black uppercase tracking-wider border border-orange-500/20">{notifications.length} New</span>
-                  </div>
-                  <div className="overflow-y-auto custom-scrollbar flex-1">
-                    {notifications.length > 0 ? (
-                      notifications.slice(0, 10).map(notif => (
-                        <div
-                          key={notif.id}
-                          onClick={async () => {
-                            if (!notif.read) {
-                              await markNotificationRead(notif.id);
-                              loadData();
-                            }
-                            if (notif.link) {
-                              setActiveTab(notif.link as Tab);
-                              setIsNotificationsOpen(false);
-                            }
-                          }}
-                          className={`px-6 py-4 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-all relative group ${!notif.read ? 'bg-orange-500/5' : ''}`}
-                        >
-                          <div className="flex items-start gap-4">
-                            <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 shadow-sm ${notif.type === 'success' ? 'bg-emerald-400 shadow-emerald-500/50' : notif.type === 'warning' ? 'bg-amber-400 shadow-amber-500/50' : 'bg-orange-400 shadow-orange-500/50'} ${notif.read ? 'opacity-20' : ''}`}></div>
-                            <div className="flex-1">
-                              <p className={`text-sm ${notif.read ? 'text-slate-400' : 'text-white font-bold font-outfit'}`}>{notif.title}</p>
-                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{notif.message}</p>
-                              <div className="flex items-center gap-2 mt-2">
-                                <Clock className="w-3 h-3 text-slate-500" />
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{format(new Date(notif.createdAt), 'MMM d, h:mm a')}</p>
+            <AnimatePresence>
+              {isMobileMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="absolute top-[88px] left-4 right-4 liquid-glass rounded-3xl border border-white/10 p-4 z-50 lg:hidden flex flex-col gap-2 shadow-2xl"
+                >
+                  {[
+                    { id: 'browse', label: 'Explore', icon: Sparkles },
+                    { id: 'organizer', label: 'Dashboard', show: currentUser?.role === 'organizer', icon: Layout },
+                    { id: 'my-tickets', label: 'My Tickets', show: currentUser?.role === 'attendee', icon: QrCode }
+                  ].filter(item => item.show !== false).map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id as Tab);
+                        setIsMobileMenuOpen(false);
+                      }}
+                      className={`flex items-center gap-4 px-6 py-4 rounded-2xl text-sm font-bold font-outfit transition-all ${activeTab === item.id ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                    >
+                      <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-white' : 'text-orange-500'}`} />
+                      {item.label}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="relative">
+              <button
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                className={`p-3 rounded-xl transition-all relative ${isNotificationsOpen ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'bg-white/5 text-slate-400 hover:text-orange-400 hover:bg-white/10'}`}
+              >
+                <Bell className="w-5 h-5" />
+                {notifications.filter(n => !n.read).length > 0 && (
+                  <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-900 animate-pulse"></span>
+                )}
+              </button>
+
+              {isNotificationsOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setIsNotificationsOpen(false)}></div>
+                  <div className="absolute right-0 mt-4 w-80 xs:w-96 liquid-glass rounded-3xl shadow-2xl border border-white/10 py-0 z-20 animate-in fade-in zoom-in-95 origin-top-right overflow-hidden flex flex-col max-h-[500px]">
+                    <div className="px-6 py-5 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                      <h3 className="text-lg font-bold text-white font-outfit">Notifications</h3>
+                      <span className="px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-400 text-[10px] font-black uppercase tracking-wider border border-orange-500/20">{notifications.length} New</span>
+                    </div>
+                    <div className="overflow-y-auto custom-scrollbar flex-1">
+                      {notifications.length > 0 ? (
+                        notifications.slice(0, 10).map(notif => (
+                          <div
+                            key={notif.id}
+                            onClick={async () => {
+                              if (!notif.read) {
+                                await markNotificationRead(notif.id);
+                                loadData();
+                              }
+                              if (notif.link) {
+                                setActiveTab(notif.link as Tab);
+                                setIsNotificationsOpen(false);
+                              }
+                            }}
+                            className={`px-6 py-4 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-all relative group ${!notif.read ? 'bg-orange-500/5' : ''}`}
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 shadow-sm ${notif.type === 'success' ? 'bg-emerald-400 shadow-emerald-500/50' : notif.type === 'warning' ? 'bg-amber-400 shadow-amber-500/50' : 'bg-orange-400 shadow-orange-500/50'} ${notif.read ? 'opacity-20' : ''}`}></div>
+                              <div className="flex-1">
+                                <p className={`text-sm ${notif.read ? 'text-slate-400' : 'text-white font-bold font-outfit'}`}>{notif.title}</p>
+                                <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{notif.message}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <Clock className="w-3 h-3 text-slate-500" />
+                                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{format(new Date(notif.createdAt), 'MMM d, h:mm a')}</p>
+                                </div>
                               </div>
+                              <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-orange-400 group-hover:translate-x-1 transition-all mt-1" />
                             </div>
-                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-orange-400 group-hover:translate-x-1 transition-all mt-1" />
                           </div>
+                        ))
+                      ) : (
+                        <div className="py-20 text-center flex flex-col items-center">
+                          <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4">
+                            <Bell className="w-8 h-8 text-slate-600" />
+                          </div>
+                          <p className="text-slate-400 text-sm font-medium">No notifications yet</p>
+                          <p className="text-slate-500 text-xs mt-1">We'll alert you when something happens</p>
                         </div>
-                      ))
-                    ) : (
-                      <div className="py-20 text-center flex flex-col items-center">
-                        <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4">
-                          <Bell className="w-8 h-8 text-slate-600" />
-                        </div>
-                        <p className="text-slate-400 text-sm font-medium">No notifications yet</p>
-                        <p className="text-slate-500 text-xs mt-1">We'll alert you when something happens</p>
+                      )}
+                    </div>
+                    {notifications.length > 0 && (
+                      <div className="px-6 py-4 border-t border-white/5 bg-white/[0.02]">
+                        <button
+                          onClick={() => setIsNotificationsOpen(false)}
+                          className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400 hover:text-orange-300 w-full text-center py-2 rounded-xl"
+                        >
+                          Dismiss All
+                        </button>
                       </div>
                     )}
                   </div>
-                  {notifications.length > 0 && (
-                    <div className="px-6 py-4 border-t border-white/5 bg-white/[0.02]">
-                      <button
-                        onClick={() => setIsNotificationsOpen(false)}
-                        className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400 hover:text-orange-300 w-full text-center py-2 rounded-xl"
-                      >
-                        Dismiss All
-                      </button>
-                    </div>
+                </>
+              )}
+            </div>
+
+            {currentUser ? (
+              <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+                <div className="hidden sm:flex flex-col items-end">
+                  <span className="text-sm font-black font-outfit text-white tracking-tight leading-none">{currentUser.name}</span>
+                  <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mt-1 opacity-80">{currentUser.role}</span>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                    className="w-11 h-11 bg-gradient-to-br from-orange-500/20 to-amber-500/20 rounded-2xl flex items-center justify-center border border-white/10 hover:border-orange-500/50 transition-all group overflow-hidden"
+                  >
+                    {currentUser.avatarUrl ? (
+                      <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <UserCircle className="w-7 h-7 text-slate-300 group-hover:text-white group-hover:scale-110 transition-all" />
+                    )}
+                  </button>
+
+                  {isProfileMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10 cursor-default"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                      ></div>
+                      <div className="absolute right-0 mt-4 w-64 liquid-glass rounded-3xl shadow-2xl border border-white/10 py-3 z-20 animate-in fade-in zoom-in-95 origin-top-right">
+                        <div className="px-6 py-4 border-b border-white/5 md:hidden mb-2">
+                          <p className="text-sm font-bold text-white font-outfit">{currentUser.name}</p>
+                          <p className="text-xs text-slate-400 truncate opacity-60 tracking-tight">{currentUser.email}</p>
+                        </div>
+                        <div className="px-3 space-y-1">
+                          <button
+                            onClick={() => {
+                              setProfileForm({
+                                name: currentUser.name,
+                                email: currentUser.email,
+                                phoneNumber: currentUser.phoneNumber || '',
+                                isPhoneVerified: !!currentUser.phoneNumber,
+                                avatarUrl: currentUser.avatarUrl
+                              });
+                              setOtp('');
+                              setOtpPurpose('profile');
+                              setShowOtpInput(false);
+                              setConfirmationResult(null);
+                              setIsProfileModalOpen(true);
+                              setIsProfileMenuOpen(false);
+                            }}
+                            className="w-full text-left px-4 py-3 text-sm font-bold font-outfit text-slate-300 hover:bg-orange-600 hover:text-white rounded-xl transition-all flex items-center gap-3 group"
+                          >
+                            <UserCircle className="w-5 h-5 text-orange-400 group-hover:text-white" /> Edit Profile
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleLogout();
+                              setIsProfileMenuOpen(false);
+                            }}
+                            className="w-full text-left px-4 py-3 text-sm font-bold font-outfit text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl transition-all flex items-center gap-3 group"
+                          >
+                            <LogOut className="w-5 h-5 group-hover:text-white" /> Sign Out
+                          </button>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
-              </>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-5 sm:px-8 py-3 bg-orange-600 text-white rounded-2xl text-xs sm:text-sm font-black font-outfit hover:bg-orange-700 transition-all shadow-xl shadow-orange-600/30 active:scale-95 uppercase tracking-wider"
+              >
+                Sign In
+              </button>
             )}
           </div>
-
-          {currentUser ? (
-            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-black font-outfit text-white tracking-tight leading-none">{currentUser.name}</span>
-                <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mt-1 opacity-80">{currentUser.role}</span>
-              </div>
-              <div className="relative">
-                <button
-                  onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="w-11 h-11 bg-gradient-to-br from-orange-500/20 to-amber-500/20 rounded-2xl flex items-center justify-center border border-white/10 hover:border-orange-500/50 transition-all group overflow-hidden"
-                >
-                  {currentUser.avatarUrl ? (
-                    <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <UserCircle className="w-7 h-7 text-slate-300 group-hover:text-white group-hover:scale-110 transition-all" />
-                  )}
-                </button>
-
-                {isProfileMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10 cursor-default"
-                      onClick={() => setIsProfileMenuOpen(false)}
-                    ></div>
-                    <div className="absolute right-0 mt-4 w-64 liquid-glass rounded-3xl shadow-2xl border border-white/10 py-3 z-20 animate-in fade-in zoom-in-95 origin-top-right">
-                      <div className="px-6 py-4 border-b border-white/5 md:hidden mb-2">
-                        <p className="text-sm font-bold text-white font-outfit">{currentUser.name}</p>
-                        <p className="text-xs text-slate-400 truncate opacity-60 tracking-tight">{currentUser.email}</p>
-                      </div>
-                      <div className="px-3 space-y-1">
-                        <button
-                          onClick={() => {
-                            setProfileForm({
-                              name: currentUser.name,
-                              email: currentUser.email,
-                              phoneNumber: currentUser.phoneNumber || '',
-                              isPhoneVerified: !!currentUser.phoneNumber,
-                              avatarUrl: currentUser.avatarUrl
-                            });
-                            setOtp('');
-                            setOtpPurpose('profile');
-                            setShowOtpInput(false);
-                            setConfirmationResult(null);
-                            setIsProfileModalOpen(true);
-                            setIsProfileMenuOpen(false);
-                          }}
-                          className="w-full text-left px-4 py-3 text-sm font-bold font-outfit text-slate-300 hover:bg-orange-600 hover:text-white rounded-xl transition-all flex items-center gap-3 group"
-                        >
-                          <UserCircle className="w-5 h-5 text-orange-400 group-hover:text-white" /> Edit Profile
-                        </button>
-                        <button
-                          onClick={() => {
-                            handleLogout();
-                            setIsProfileMenuOpen(false);
-                          }}
-                          className="w-full text-left px-4 py-3 text-sm font-bold font-outfit text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl transition-all flex items-center gap-3 group"
-                        >
-                          <LogOut className="w-5 h-5 group-hover:text-white" /> Sign Out
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsAuthModalOpen(true)}
-              className="px-5 sm:px-8 py-3 bg-orange-600 text-white rounded-2xl text-xs sm:text-sm font-black font-outfit hover:bg-orange-700 transition-all shadow-xl shadow-orange-600/30 active:scale-95 uppercase tracking-wider"
-            >
-              Sign In
-            </button>
-          )}
         </div>
       </div>
     </header>
@@ -2196,31 +2235,38 @@ export default function App() {
       <div className="animate-in fade-in duration-700">
         {/* Modern Premium Hero Section */}
         {activeTab === 'browse' && !currentUser && (
-          <div className="relative overflow-hidden mb-8 sm:mb-16 pt-16 pb-20 md:pt-12 md:pb-24 transition-all">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[1000px] bg-orange-600/10 blur-[120px] rounded-full pointer-events-none -z-10 animate-pulse"></div>
-            <div className="absolute -top-20 -right-20 w-80 h-80 bg-amber-600/10 blur-[100px] rounded-full pointer-events-none -z-10"></div>
+          <div className="relative overflow-hidden mb-8 sm:mb-16 pt-32 pb-20 md:pt-40 md:pb-32 transition-all">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-orange-600/20 blur-[150px] rounded-full pointer-events-none -z-10 animate-pulse"></div>
 
-            <div className="max-w-4xl mx-auto text-center px-6">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] mb-8 animate-float">
-                <Sparkles className="w-4 h-4" />
+            <div className="max-w-5xl mx-auto text-center px-6 relative z-10">
+              <div className="inline-flex items-center gap-3 px-6 py-2.5 rounded-full liquid-glass text-orange-300 border-orange-500/20 text-[10px] sm:text-xs font-black uppercase tracking-[0.25em] mb-10 animate-float shadow-[0_0_30px_rgba(234,88,12,0.2)]">
+                <Sparkles className="w-3.5 h-3.5" />
                 Experience the Extraordinary
               </div>
-              <h1 className="text-4xl sm:text-5xl md:text-7xl font-black font-outfit text-white mb-8 tracking-tighter leading-[1.1] md:leading-[0.9]">
+
+              <h1 className="text-5xl sm:text-6xl md:text-8xl font-black font-outfit text-white mb-10 tracking-tighter leading-[1] md:leading-[0.9] drop-shadow-2xl">
                 Where Every Moment <br className="hidden sm:block" />
-                <span className="text-gradient">Becomes a Legacy</span>
+                <span className="text-refraction relative inline-block">
+                  Becomes a Legacy
+                  <svg className="absolute w-full h-3 -bottom-1 left-0 text-orange-500 opacity-50" viewBox="0 0 200 9" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.00025 6.99997C25.7509 9.37523 78.9113 9.00003 160.004 2.00001" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+                </span>
               </h1>
-              <p className="text-base sm:text-xl text-slate-400 mb-10 md:mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
+
+              <p className="text-lg sm:text-2xl text-slate-300 mb-12 max-w-3xl mx-auto leading-relaxed font-medium drop-shadow-md">
                 Connect with the world's most exclusive tech, design, and cultural events. Your next core memory is just a click away.
               </p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
-                  className="w-full sm:w-auto px-10 py-5 bg-gradient-to-r from-orange-600 to-amber-600 text-white rounded-3xl text-sm md:text-lg font-black font-outfit hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-orange-600/40 uppercase tracking-widest"
+                  className="w-full sm:w-auto px-12 py-5 button-glow text-white rounded-[24px] text-sm md:text-lg font-black font-outfit uppercase tracking-[0.15em] hover:scale-105 active:scale-95 transition-all"
                 >
                   Start Your Journey
                 </button>
-                <div className="flex items-center gap-2 text-slate-500 font-bold text-xs sm:text-sm">
-                  <Users className="w-5 h-5" />
+                <div className="flex items-center gap-3 text-slate-400 font-bold text-xs sm:text-sm bg-white/5 px-6 py-4 rounded-2xl border border-white/5 backdrop-blur-sm">
+                  <div className="flex -space-x-2">
+                    {[1, 2, 3].map(i => <div key={i} className={`w-6 h-6 rounded-full border-2 border-slate-900 bg-slate-700/50`}></div>)}
+                  </div>
                   Join 10,000+ members
                 </div>
               </div>
@@ -2228,7 +2274,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+        <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20 ${!currentUser ? '' : 'pt-32'}`}>
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 md:mb-12">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -2240,13 +2286,7 @@ export default function App() {
               </h2>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar pb-2 sm:pb-0">
-              <div className="flex p-1.5 bg-white/5 rounded-2xl border border-white/5 whitespace-nowrap">
-                <button className="px-4 py-2 sm:px-6 bg-orange-600 rounded-xl text-[10px] font-black text-white uppercase tracking-widest transition-all">All</button>
-                <button className="px-4 py-2 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all hover:text-white">Tech</button>
-                <button className="px-4 py-2 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all hover:text-white">Design</button>
-              </div>
-            </div>
+
           </div>
 
           {!dataLoading && upcomingEvents.length === 0 ? (
@@ -2259,7 +2299,7 @@ export default function App() {
               {currentUser?.role === 'organizer' && (
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
-                  className="bg-orange-600 text-white px-10 py-5 rounded-[24px] font-black font-outfit hover:bg-orange-500 transition-all uppercase tracking-widest shadow-2xl shadow-orange-600/40 hyper-glow active:scale-95 translate-y-0 hover:-translate-y-1"
+                  className="button-glow text-white px-10 py-5 rounded-[24px] font-black font-outfit transition-all uppercase tracking-widest active:scale-95"
                 >
                   Create Your First Event
                 </button>
@@ -2363,7 +2403,7 @@ export default function App() {
     };
 
     return (
-      <div className="max-w-4xl mx-auto px-4 py-10 md:py-16 animate-in slide-in-from-bottom-4 duration-700">
+      <div className="max-w-4xl mx-auto px-4 pt-32 pb-16 md:pb-20 animate-in slide-in-from-bottom-4 duration-700">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -2431,7 +2471,7 @@ export default function App() {
     // If no event selected, show Dashboard or List
     if (!organizerSelectedEventId) {
       return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 animate-in fade-in duration-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-16 animate-in fade-in duration-700">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
             <div>
               <h2 className="text-4xl font-black font-outfit text-white tracking-tight">Command Center</h2>
@@ -2575,7 +2615,7 @@ export default function App() {
     }
 
     return (
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 pt-32 pb-16">
         <button
           onClick={() => { setOrganizerSelectedEventId(null); setSelectedRegistrationIds([]); }}
           className="mb-4 text-sm text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
@@ -2922,10 +2962,21 @@ export default function App() {
       {renderHeader()}
       <ToastContainer toasts={toasts} />
 
-      <main className="pt-6">
-        {activeTab === 'browse' && renderEvents()}
-        {activeTab === 'my-tickets' && (currentUser ? renderMyTickets() : <div className="text-center py-20 text-slate-400">Please sign in to view your tickets.</div>)}
-        {activeTab === 'organizer' && (currentUser?.role === 'organizer' ? renderOrganizer() : <div className="text-center py-20 text-slate-400">Organizer dashboard requires organizer privileges.</div>)}
+      <main className="pt-6 px-4 sm:px-0 max-w-7xl mx-auto">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 20, filter: 'blur(5px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -20, filter: 'blur(5px)' }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="w-full"
+          >
+            {activeTab === 'browse' && renderEvents()}
+            {activeTab === 'my-tickets' && (currentUser ? renderMyTickets() : <div className="text-center py-20 text-slate-400 glass-panel rounded-2xl mx-auto max-w-md">Please sign in to view your tickets.</div>)}
+            {activeTab === 'organizer' && (currentUser?.role === 'organizer' ? renderOrganizer() : <div className="text-center py-20 text-slate-400 glass-panel rounded-2xl mx-auto max-w-md">Organizer dashboard requires organizer privileges.</div>)}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       {renderAuthModal()}

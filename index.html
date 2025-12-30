@@ -12,14 +12,12 @@
     rel="stylesheet">
   <style>
     :root {
-      --primary-base: rgba(217, 119, 87, 0.95);
-      --primary-solid: #d97757;
-      --primary-light: rgba(217, 119, 87, 0.4);
-      --primary-glow: rgba(217, 119, 87, 0.2);
-      --sunset-gradient: linear-gradient(135deg, #d97757 0%, #ff8c42 100%);
-      --dark-midnight: #020617;
-      --dark-card: rgba(15, 23, 42, 0.6);
-      --border-sharp: rgba(217, 119, 87, 0.3);
+      --primary-base: #f97316;
+      /* Orange-500 */
+      --primary-glow: rgba(249, 115, 22, 0.5);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-surface: rgba(15, 23, 42, 0.6);
+      --glass-highlight: rgba(255, 255, 255, 0.03);
     }
 
     body {
@@ -34,54 +32,79 @@
       font-family: 'Outfit', sans-serif;
     }
 
-    /* --- High-Clarity Tech Design --- */
+    /* --- Ultra-Premium Glassmorphism --- */
 
     .liquid-glass {
-      background: rgba(5, 5, 15, 0.7);
-      border: 1px solid var(--border-sharp);
-      box-shadow:
-        0 0 0 1px rgba(217, 119, 87, 0.1),
-        0 20px 50px -12px rgba(0, 0, 0, 0.8),
-        inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-      position: relative;
+      background: rgba(2, 6, 23, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     }
 
     .glass-card {
-      background: rgba(15, 23, 42, 0.4);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow:
-        0 10px 15px -3px rgba(0, 0, 0, 0.4),
-        0 0 0 1px rgba(255, 255, 255, 0.02);
-      transition: all 0.5s cubic-bezier(0.2, 1, 0.3, 1);
+      background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.4) 100%);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .glass-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+      transition: 0.5s;
     }
 
     .glass-card:hover {
-      background: rgba(21, 31, 51, 0.6);
-      border-color: var(--primary-light);
-      transform: translateY(-12px) scale(1.02);
+      transform: translateY(-8px) scale(1.01);
+      border-color: rgba(249, 115, 22, 0.3);
       box-shadow:
-        0 30px 60px -12px rgba(0, 0, 0, 0.9),
-        0 0 20px 0 rgba(217, 119, 87, 0.1);
+        0 20px 25px -5px rgba(0, 0, 0, 0.5),
+        0 8px 10px -6px rgba(0, 0, 0, 0.5),
+        0 0 15px rgba(249, 115, 22, 0.1);
+      /* Subtle orange glow */
     }
 
-    .hyper-glow {
-      box-shadow: 0 0 40px -5px var(--primary-glow);
+    .glass-card:hover::before {
+      left: 100%;
     }
 
-    .hyper-glow:hover {
-      box-shadow: 0 0 50px -2px var(--primary-glow);
+    /* --- Neon & Glow Effects --- */
+
+    .text-glow {
+      text-shadow: 0 0 20px var(--primary-glow);
     }
 
-    /* Chromatic Refraction Text */
+    .button-glow {
+      position: relative;
+      background: linear-gradient(45deg, #ea580c, #c2410c);
+      box-shadow: 0 0 15px rgba(234, 88, 12, 0.3);
+      transition: all 0.3s ease;
+      overflow: hidden;
+    }
+
+    .button-glow:hover {
+      box-shadow: 0 0 25px rgba(234, 88, 12, 0.6);
+      transform: translateY(-2px);
+    }
+
+    /* Chromatic Text */
     .text-refraction {
-      background: linear-gradient(90deg, #fff, #fb923c, #f97316, #fb923c, #fff);
+      background: linear-gradient(to right, #ffffff 20%, #fdba74 40%, #fb923c 60%, #ffffff 80%);
       background-size: 200% auto;
       -webkit-background-clip: text;
       background-clip: text;
       -webkit-text-fill-color: transparent;
-      filter: drop-shadow(0 0 12px rgba(217, 119, 87, 0.4));
-      animation: shine 5s linear infinite;
-      letter-spacing: -0.05em;
+      animation: shine 4s linear infinite;
     }
 
     @keyframes shine {
@@ -90,48 +113,56 @@
       }
     }
 
-    @keyframes pan-galaxy {
-      0% {
-        transform: scale(1) rotate(0deg);
+    /* Floating Animation */
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0px);
       }
 
       50% {
-        transform: scale(1.1) rotate(1deg);
-      }
-
-      100% {
-        transform: scale(1) rotate(0deg);
+        transform: translateY(-10px);
       }
     }
 
-    .animate-galaxy {
-      animation: pan-galaxy 30s ease-in-out infinite;
-      will-change: transform;
+    .animate-float {
+      animation: float 6s ease-in-out infinite;
     }
 
-    /* Animated Border System */
-    .border-glow {
-      position: relative;
-      background: linear-gradient(#0f172a, #0f172a) padding-box,
-        linear-gradient(45deg, #d97757, #ed8936, transparent) border-box;
-      border: 1px solid transparent;
+    .animate-float-delayed {
+      animation: float 7s ease-in-out 1s infinite;
     }
 
     /* Custom Scrollbar */
     .custom-scrollbar::-webkit-scrollbar {
-      width: 5px;
+      width: 6px;
+      height: 6px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
     }
 
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: var(--primary-light);
-      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 100vh;
     }
 
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
     }
 
-    /* Dark Mode Calendar Icons */
+    /* Input Autofill Fix for Dark Themes */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    input:-webkit-autofill:active {
+      -webkit-box-shadow: 0 0 0 30px #020617 inset !important;
+      -webkit-text-fill-color: white !important;
+      transition: background-color 5000s ease-in-out 0s;
+    }
+
     input[type="date"]::-webkit-calendar-picker-indicator,
     input[type="datetime-local"]::-webkit-calendar-picker-indicator {
       filter: invert(1);
