@@ -165,7 +165,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         </div>
 
         <div className="p-4 bg-slate-800 text-slate-300 text-sm text-center">
-          Point camera at attendee's QR code
+          Point camera at participant's QR code
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   password?: string; // Simple mock password
   role: Role;
 }

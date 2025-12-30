@@ -5,6 +5,7 @@ import {
   Search, Users, Clock, X, Check, ChevronRight, ChevronLeft, Trash2, Edit,
   Save, Upload, Image as ImageIcon, Loader2, Menu, LogOut, Download, Bell,
   Send, MessageSquare, UserCircle, KeyRound, Mail, Filter, ExternalLink
+  , Twitter, Github, Phone
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { format } from 'date-fns';
@@ -145,7 +146,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isAuthMode, setIsAuthMode] = useState<'signin' | 'signup' | 'forgot-password'>('signin');
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', role: 'attendee' as Role });
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', phone: '', role: 'attendee' as Role });
   const [resetEmail, setResetEmail] = useState('');
 
   const [activeTab, setActiveTab] = useState<Tab>('browse');
@@ -189,6 +190,15 @@ export default function App() {
   const [selectedEventForReg, setSelectedEventForReg] = useState<Event | null>(null);
   const [selectedEventForDetails, setSelectedEventForDetails] = useState<Event | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<Registration | null>(null);
+  const [scratchedTickets, setScratchedTickets] = useState<string[]>([]);
+  const [recentlyRegisteredEventIds, setRecentlyRegisteredEventIds] = useState<string[]>([]);
+  const [cancelingRegistration, setCancelingRegistration] = useState<Registration | null>(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const toggleScratch = (id: string) => {
+    setScratchedTickets(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [detailsTab, setDetailsTab] = useState<'info' | 'discussion'>('info');
 
@@ -237,7 +247,7 @@ export default function App() {
 
   // Profile Edit State
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({ name: '', email: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', email: '', phone: '' });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -246,7 +256,7 @@ export default function App() {
     setIsSavingProfile(true);
 
     try {
-      const updatedUser = { ...currentUser, name: profileForm.name }; // Email update usually restricted
+      const updatedUser = { ...currentUser, name: profileForm.name, phone: (profileForm as any).phone || '' }; // Email update usually restricted
       await saveUserProfile(updatedUser);
       setCurrentUser(updatedUser);
       addToast('Profile updated successfully', 'success');
@@ -285,7 +295,7 @@ export default function App() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => loadData(true), 1000);
+    const interval = setInterval(() => loadData(true), 5000);
     return () => clearInterval(interval);
   }, [currentUser]);
 
@@ -302,7 +312,7 @@ export default function App() {
     };
 
     fetchMessages();
-    const interval = setInterval(() => fetchMessages(true), 1000);
+    const interval = setInterval(() => fetchMessages(true), 5000);
     return () => clearInterval(interval);
   }, [selectedEventForDetails]);
 
@@ -337,6 +347,7 @@ export default function App() {
     const newUser = await registerUser({
       name: authForm.name,
       email: authForm.email,
+      phone: authForm.phone,
       role: authForm.role
     }, authForm.password);
 
@@ -573,6 +584,11 @@ export default function App() {
 
       if (created) {
         await loadData();
+        // Add visual registration animation for the event
+        try {
+          setRecentlyRegisteredEventIds(prev => [...prev, selectedEventForReg.id]);
+          setTimeout(() => setRecentlyRegisteredEventIds(prev => prev.filter(id => id !== selectedEventForReg.id)), 1500);
+        } catch (e) {}
         setSelectedEventForReg(null);
         setRegistrationAnswers({});
         if (created.status === RegistrationStatus.WAITLISTED) {
@@ -623,7 +639,7 @@ export default function App() {
   };
 
   const handleSendReminders = async (event: Event) => {
-    if (!confirm(`Send email reminders to all approved attendees for "${event.title}"?`)) return;
+    if (!confirm(`Send email reminders to all approved participants for "${event.title}"?`)) return;
 
     setIsSendingReminders(true);
 
@@ -632,7 +648,7 @@ export default function App() {
     );
 
     if (approvedRegs.length === 0) {
-      addToast('No approved attendees to notify.', 'info');
+      addToast('No approved participants to notify.', 'info');
       setIsSendingReminders(false);
       return;
     }
@@ -651,7 +667,7 @@ export default function App() {
     }));
 
     setIsSendingReminders(false);
-    addToast(`Sent reminders to ${count} attendees.`, 'success');
+    addToast(`Sent reminders to ${count} participants.`, 'success');
   };
 
   const handleExportCSV = (event: Event) => {
@@ -818,7 +834,7 @@ export default function App() {
                 <h1 className="text-3xl font-bold">EventHorizon</h1>
               </div>
               <p className="text-indigo-100 text-lg mb-8 leading-relaxed">
-                The all-in-one platform for seamless event management. Create events, register attendees, and check them in with ease.
+                The all-in-one platform for seamless event management. Create events, register participants, and check them in with ease.
               </p>
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
@@ -838,8 +854,9 @@ export default function App() {
           </div>
 
           <div className="p-8 md:w-1/2 flex flex-col justify-center">
-            <div className="max-w-sm mx-auto w-full">
-              <h2 className="text-2xl font-bold text-white mb-2">
+            <div className="max-w-sm mx-auto w-full bg-slate-900/60 backdrop-blur-sm p-6 rounded-3xl border border-slate-800 shadow-2xl">
+              <h2 className="text-2xl font-extrabold mb-2 bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-300" />
                 {isAuthMode === 'signin' ? 'Welcome back' : isAuthMode === 'forgot-password' ? 'Reset Password' : 'Create an account'}
               </h2>
               <p className="text-slate-400 mb-8">
@@ -899,6 +916,23 @@ export default function App() {
                           className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                           value={authForm.name}
                           onChange={e => setAuthForm({ ...authForm, name: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {isAuthMode === 'signup' && (
+                    <div>
+                      <label htmlFor="signup-phone" className="block text-sm font-medium text-slate-300 mb-1">Phone Number</label>
+                      <div className="relative">
+                        <Phone className="w-5 h-5 text-slate-500 absolute left-3 top-2.5" />
+                        <input
+                          id="signup-phone"
+                          type="tel"
+                          placeholder="+1 555 555 5555"
+                          className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                          value={authForm.phone}
+                          onChange={e => setAuthForm({ ...authForm, phone: e.target.value })}
                         />
                       </div>
                     </div>
@@ -1087,7 +1121,7 @@ export default function App() {
                 className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === 'browse' ? 'bg-slate-700 text-indigo-400 shadow-sm' : 'text-slate-400 hover:text-white'
                   }`}
               >
-                Browse
+                Events
               </button>
               <button
                 onClick={() => setActiveTab('my-tickets')}
@@ -1190,7 +1224,7 @@ export default function App() {
 
           <div className="hidden md:flex flex-col items-end">
             <span className="text-sm font-medium text-slate-200">{currentUser.name}</span>
-            <span className="text-xs text-slate-400 capitalize">{currentUser.role}</span>
+            <span className="text-xs text-slate-400 capitalize">{currentUser.role === 'attendee' ? 'Participant' : currentUser.role}</span>
           </div>
           <div className="relative">
             <button
@@ -1213,7 +1247,7 @@ export default function App() {
                   </div>
                   <button
                     onClick={() => {
-                      setProfileForm({ name: currentUser.name, email: currentUser.email });
+                      setProfileForm({ name: currentUser.name, email: currentUser.email, phone: (currentUser as any).phone || '' });
                       setIsProfileModalOpen(true);
                       setIsProfileMenuOpen(false);
                     }}
@@ -1307,32 +1341,44 @@ export default function App() {
                         Live Now
                       </div>
                     )}
-                    <button
-                      onClick={() => !isRegistered && !isClosed && setSelectedEventForReg(event)}
-                      disabled={isRegistered || isClosed}
-                      className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 border shadow-lg shadow-black/20 ${isRegistered
-                        ? 'bg-green-900/40 text-green-400 border-green-800 cursor-default'
-                        : isClosed
-                          ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
-                          : isFull
-                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
-                        }`}
-                    >
-                      {isRegistered ? (
-                        <>
-                          <CheckCircle className="w-4 h-4" /> Already Registered
-                        </>
-                      ) : isClosed ? (
-                        <>
-                          <XCircle className="w-4 h-4" /> {isPastBadge ? 'Event Ended' : 'Registration Closed'}
-                        </>
-                      ) : isFull ? (
-                        <>
-                          <Plus className="w-4 h-4" /> Join Waitlist
-                        </>
-                      ) : 'Register Now'}
-                    </button>
+                      {(() => {
+                        const justRegistered = recentlyRegisteredEventIds.includes(event.id);
+                        return (
+                          <button
+                            onClick={() => !isRegistered && !isClosed && setSelectedEventForReg(event)}
+                            disabled={isRegistered || isClosed}
+                            className={`w-full font-semibold py-3 rounded-xl transition-transform transform flex items-center justify-center gap-2 border shadow-lg shadow-black/20 ${justRegistered
+                              ? 'bg-green-600 text-white scale-105 ring-2 ring-green-500/30 shadow-lg'
+                              : isRegistered
+                                ? 'bg-green-900/40 text-green-400 border-green-800 cursor-default'
+                                : isClosed
+                                  ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
+                                  : isFull
+                                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
+                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent hover:shadow-indigo-500/20 active:scale-[0.98]'
+                              }`}
+                          >
+                            {justRegistered ? (
+                              <>
+                                <CheckCircle className="w-4 h-4 animate-bounce" />
+                                <span className="uppercase text-sm font-bold tracking-wide">Registered!</span>
+                              </>
+                            ) : isRegistered ? (
+                              <>
+                                <CheckCircle className="w-4 h-4" /> Already Registered
+                              </>
+                            ) : isClosed ? (
+                              <>
+                                <XCircle className="w-4 h-4" /> {isPastBadge ? 'Event Ended' : 'Registration Closed'}
+                              </>
+                            ) : isFull ? (
+                              <>
+                                <Plus className="w-4 h-4" /> Join Waitlist
+                              </>
+                            ) : 'Register Now'}
+                          </button>
+                        );
+                      })()}
                   </div>
                 )
               })()
@@ -1347,7 +1393,7 @@ export default function App() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 gap-4">
           <div>
             <h2 className="text-3xl font-bold text-white font-outfit tracking-tight">
-              {currentUser.role === 'organizer' && activeTab === 'browse' ? 'My Hosted Events' : 'Explore Experiences'}
+              {currentUser.role === 'organizer' && activeTab === 'browse' ? 'My Hosted Events' : 'Upcoming events'}
             </h2>
             <p className="text-slate-400 mt-2 text-lg">Discover and join amazing events happening near you.</p>
           </div>
@@ -1420,78 +1466,84 @@ export default function App() {
               if (!event) return null;
 
               return (
-                <div key={reg.id} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center gap-6 shadow-sm">
-                  <div className="flex-1 w-full md:w-auto">
-                    <div className="flex justify-between items-center md:items-start mb-2 md:mb-0">
-                      <div className="flex items-center gap-2">
-                        <Badge status={reg.status} />
-                        {(() => {
-                          const now = new Date();
-                          const startDate = new Date(event.date);
-                          const endDate = event.endDate ? new Date(event.endDate) : new Date(startDate.getTime() + 3600000);
-                          if (now >= startDate && now <= endDate) {
-                            return <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-500 animate-pulse bg-red-950/30 px-1.5 py-0.5 rounded border border-red-900/40 uppercase">LIVE</span>;
-                          }
-                          return null;
-                        })()}
+                <div key={reg.id} className="w-full">
+                  <div className="relative flex items-stretch bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-800 rounded-2xl shadow-sm overflow-visible transition-transform transform hover:-translate-y-0.5">
+                    {/* Main ticket body */}
+                    <div className="flex-1 p-6 md:p-7 flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-2">
+                          <Badge status={reg.status} />
+                          {(() => {
+                            const now = new Date();
+                            const startDate = new Date(event.date);
+                            const endDate = event.endDate ? new Date(event.endDate) : new Date(startDate.getTime() + 3600000);
+                            if (now >= startDate && now <= endDate) {
+                              return <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-500 animate-pulse bg-red-950/30 px-1.5 py-0.5 rounded border border-red-900/40 uppercase">LIVE</span>;
+                            }
+                            return null;
+                          })()}
+                        </div>
+                        <span className="md:hidden text-xs text-slate-400">ID: {reg.id.slice(0, 8)}...</span>
                       </div>
-                      <span className="md:hidden text-xs text-slate-400">ID: {reg.id.slice(0, 8)}...</span>
+
+                      <div className="mt-1">
+                        <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold mt-0 mb-1 font-outfit bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent tracking-tight">
+                          {event.title}
+                        </h3>
+                        <div className="flex items-center gap-3 text-slate-400 text-sm">
+                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(new Date(event.date), 'MMM d, yyyy')}</span>
+                          <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${event.locationType === 'online' ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-800' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
+                            {event.locationType === 'online' ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3 text-slate-400 text-sm">
+                        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(new Date(event.date), 'MMM d, yyyy')}</span>
+                        <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {renderLocation(event.location, event.locationType)}</span>
+                        <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${event.locationType === 'online' ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-800' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
+                          {event.locationType === 'online' ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+
+                      <div className="hidden md:block mt-2 text-xs text-slate-500">ID: {reg.id.slice(0, 8)}...</div>
                     </div>
-                    <h3 className="text-lg font-bold text-white mt-2">{event.title}</h3>
-                    <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2 text-slate-400 text-sm">
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {format(new Date(event.date), 'MMM d, yyyy')}</span>
-                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {renderLocation(event.location, event.locationType)}</span>
-                      <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${event.locationType === 'online' ? 'bg-indigo-900/40 text-indigo-400 border border-indigo-800' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
-                        {event.locationType === 'online' ? 'Online' : 'Offline'}
-                      </span>
+
+                    {/* Perforation + stub */}
+                    <div className="relative flex flex-col items-center justify-center w-36 bg-slate-950/10 border-l border-slate-800 p-4">
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+                        {reg.status === RegistrationStatus.APPROVED ? (
+                          <button
+                            onClick={() => setSelectedTicket(reg)}
+                            className="flex items-center justify-center gap-2 w-full bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
+                          >
+                            <QrCode className="w-4 h-4" />
+                            <span className="text-sm font-bold">View</span>
+                          </button>
+                        ) : (
+                          <div className="text-center text-xs text-slate-400 px-2">{reg.status === RegistrationStatus.PENDING ? 'Waiting for approval' : reg.status === RegistrationStatus.WAITLISTED ? 'On Waitlist' : 'Registration Rejected'}</div>
+                        )}
+
+                        <button
+                          onClick={() => { setCancelingRegistration(reg); setIsCancelModalOpen(true); }}
+                          className="w-full p-2 bg-red-900/20 text-red-400 rounded-lg hover:bg-red-900/40 transition-colors border border-red-800 text-sm"
+                          title={reg.status === RegistrationStatus.APPROVED ? 'Cancel Ticket' : 'Cancel Request'}
+                        >
+                          <Trash2 className="w-4 h-4 inline-block mr-1" />
+                          <span className="align-middle">Cancel</span>
+                        </button>
+                      </div>
+
+                      {/* vertical dotted perforation */}
+                      <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-transparent flex items-center justify-center">
+                        <div style={{width:2}} className="h-full bg-[repeating-linear-gradient(to bottom,#0f1720_0_6px,transparent_6px_12px)]" />
+                      </div>
                     </div>
-                    <div className="hidden md:block mt-2 text-xs text-slate-500">ID: {reg.id.slice(0, 8)}...</div>
+
+                    {/* decorative circle notches to mimic ticket shape */}
+                    <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-slate-900 rounded-full border border-slate-800"></div>
+                    <div className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-slate-900 rounded-full border border-slate-800"></div>
                   </div>
-
-                  {reg.status !== RegistrationStatus.APPROVED && (
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <div className="flex-1 px-5 py-3 text-slate-500 text-sm font-medium text-center bg-slate-950 rounded-xl">
-                        {reg.status === RegistrationStatus.PENDING ? 'Waiting for approval' : reg.status === RegistrationStatus.WAITLISTED ? 'On Waitlist' : 'Registration Rejected'}
-                      </div>
-                      <button
-                        onClick={async () => {
-                          if (confirm('Are you sure you want to cancel your request?')) {
-                            await deleteRegistration(reg.id);
-                            addToast('Registration cancelled', 'info');
-                            loadData();
-                          }
-                        }}
-                        className="p-3 bg-red-900/30 text-red-500 rounded-xl hover:bg-red-900/50 transition-colors border border-red-800"
-                        title="Cancel Request"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {reg.status === RegistrationStatus.APPROVED && (
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <button
-                        onClick={() => setSelectedTicket(reg)}
-                        className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white px-5 py-3 rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-900/20"
-                      >
-                        <QrCode className="w-4 h-4" /> View Ticket
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (confirm('Are you sure you want to cancel your ticket?')) {
-                            await deleteRegistration(reg.id);
-                            addToast('Ticket cancelled', 'info');
-                            loadData();
-                          }
-                        }}
-                        className="p-3 bg-red-900/30 text-red-500 rounded-xl hover:bg-red-900/50 transition-colors border border-red-800"
-                        title="Cancel Ticket"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -1517,7 +1569,7 @@ export default function App() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h2 className="text-2xl font-bold text-white">Organizer Dashboard</h2>
-              <p className="text-slate-400 text-sm">Manage your events and attendees</p>
+              <p className="text-slate-400 text-sm">Manage your events and participants</p>
             </div>
             <div className="flex w-full sm:w-auto gap-2">
               <button
@@ -1992,7 +2044,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen">
+      {/* Decorative themed background (image + gradient overlay + subtle animation) */}
+      <div className="fixed inset-0 -z-20 pointer-events-none">
+        <img
+          src="https://images.unsplash.com/photo-1506784365847-bbad939e9335?auto=format&fit=crop&w=1600&q=80"
+          alt="event background"
+          className="w-full h-full object-cover opacity-30"
+        />
+        <div className="absolute inset-0 -z-10 bg-gradient-to-br from-slate-900/80 via-indigo-900/35 to-black/60 mix-blend-multiply" />
+
+        {/* subtle animated overlay */}
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_10%_20%,rgba(99,102,241,0.06)_0%,transparent_15%),radial-gradient(circle_at_90%_80%,rgba(124,58,237,0.04)_0%,transparent_15%)] animate-[pulse_10s_infinite]" />
+      </div>
       {renderHeader()}
       <ToastContainer toasts={toasts} />
 
@@ -2139,7 +2203,7 @@ export default function App() {
                     className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
                     value={newEvent.capacity}
                     onChange={e => setNewEvent({ ...newEvent, capacity: e.target.value })}
-                    placeholder="Max attendees"
+                    placeholder="Max participants"
                   />
                 </div>
 
@@ -2422,6 +2486,17 @@ export default function App() {
                   <p className="text-xs text-slate-400 mt-1">Email cannot be changed directly.</p>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={(profileForm as any).phone}
+                    onChange={e => setProfileForm({ ...profileForm, phone: e.target.value })}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Optional. Used for event updates and reminders.</p>
+                </div>
+
                 <div className="pt-4 flex gap-3">
                   <button
                     type="button"
@@ -2443,6 +2518,58 @@ export default function App() {
           </div>
         )
       }
+
+      {/* CANCEL REGISTRATION CONFIRMATION MODAL */}
+      {isCancelModalOpen && cancelingRegistration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="flex justify-between items-center p-6 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-white">{cancelingRegistration.status === RegistrationStatus.APPROVED ? 'Cancel Ticket' : 'Cancel Request'}</h3>
+                <p className="text-sm text-slate-400 mt-1">{cancelingRegistration.status === RegistrationStatus.APPROVED ? 'This will cancel your approved ticket for the event.' : 'This will cancel your registration request.'}</p>
+              </div>
+              <button onClick={() => { setIsCancelModalOpen(false); setCancelingRegistration(null); }} className="text-slate-400 hover:text-white p-1">
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-300">Are you sure you want to proceed?</p>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => { setIsCancelModalOpen(false); setCancelingRegistration(null); }}
+                  className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 font-semibold py-2 rounded-xl hover:bg-slate-700 transition-colors"
+                >
+                  No, keep it
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!cancelingRegistration) return;
+                    try {
+                      setIsCancelling(true);
+                      await deleteRegistration(cancelingRegistration.id);
+                      addToast(cancelingRegistration.status === RegistrationStatus.APPROVED ? 'Ticket cancelled' : 'Registration cancelled', 'info');
+                      await loadData();
+                    } catch (e) {
+                      console.error(e);
+                      addToast('Failed to cancel registration', 'error');
+                    } finally {
+                      setIsCancelling(false);
+                      setIsCancelModalOpen(false);
+                      setCancelingRegistration(null);
+                    }
+                  }}
+                  disabled={isCancelling}
+                  className="flex-1 bg-red-700 hover:bg-red-600 text-white font-semibold py-2 rounded-xl shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Yes, cancel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* REGISTRATION DETAILS MODAL */}
       {
@@ -2820,6 +2947,57 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="mt-12 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="bg-indigo-600 p-3 rounded-lg">
+                <Calendar className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-white font-outfit">EventHorizon</h4>
+                <p className="text-slate-400 text-sm mt-1 max-w-xs">The all‑in‑one event platform — create, manage, and check in participants effortlessly.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-8 ml-auto">
+              <div>
+                <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Product</h5>
+                <ul className="text-slate-400 text-sm space-y-1">
+                  <li className="hover:text-indigo-300 transition-colors cursor-pointer">Features</li>
+                  <li className="hover:text-indigo-300 transition-colors cursor-pointer">Pricing</li>
+                  <li className="hover:text-indigo-300 transition-colors cursor-pointer">Integrations</li>
+                </ul>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Support</h5>
+                <ul className="text-slate-400 text-sm space-y-1">
+                  <li className="hover:text-indigo-300 transition-colors cursor-pointer">Docs</li>
+                  <li className="hover:text-indigo-300 transition-colors cursor-pointer">Contact</li>
+                  <li className="hover:text-indigo-300 transition-colors cursor-pointer">FAQ</li>
+                </ul>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Connect</h5>
+                <div className="flex items-center gap-3">
+                  <a href="#" className="p-2 rounded-md bg-slate-800 hover:bg-indigo-700 transition-colors text-indigo-300"><Twitter className="w-4 h-4" /></a>
+                  <a href="#" className="p-2 rounded-md bg-slate-800 hover:bg-indigo-700 transition-colors text-indigo-300"><Github className="w-4 h-4" /></a>
+                  <a href="mailto:support@eventhorizon.app" className="p-2 rounded-md bg-slate-800 hover:bg-indigo-700 transition-colors text-indigo-300"><Mail className="w-4 h-4" /></a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 border-t border-slate-800 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-slate-500 text-sm">© {new Date().getFullYear()} EventHorizon. All rights reserved.</p>
+            <div className="text-slate-400 text-sm">Built with ❤️ — <span className="text-indigo-400">Event Management Kit</span></div>
+          </div>
+        </div>
+      </footer>
 
     </div >
   );
