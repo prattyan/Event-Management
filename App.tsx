@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'react-qr-code';
 import {
@@ -24,11 +24,13 @@ import {
 } from './services/storageService';
 import { generateEventDescription, getEventRecommendations } from './services/geminiService';
 import { sendStatusUpdateEmail, sendReminderEmail } from './services/notificationService';
-import Scanner from './components/Scanner';
-import AnalyticsDashboard from './components/AnalyticsDashboard';
-import LiquidChrome from './components/LiquidChrome';
-import ParticleBackground from './components/ParticleBackground';
 import { socketService } from './services/socketService';
+
+// Lazy load heavy components for better initial load time
+const Scanner = lazy(() => import('./components/Scanner'));
+const AnalyticsDashboard = lazy(() => import('./components/AnalyticsDashboard'));
+const LiquidChrome = lazy(() => import('./components/LiquidChrome'));
+const ParticleBackground = lazy(() => import('./components/ParticleBackground'));
 
 // --- Sub-Components ---
 
@@ -1569,7 +1571,9 @@ export default function App() {
         <div className="absolute inset-0 z-0 bg-black/40"></div> {/* Overlay for contrast */}
 
         <div className="absolute inset-0 z-0">
-          <ParticleBackground />
+          <Suspense fallback={null}>
+            <ParticleBackground />
+          </Suspense>
         </div>
 
         {/* Modal Container */}
@@ -2530,10 +2534,12 @@ export default function App() {
           </div>
 
           {organizerView === 'overview' ? (
-            <AnalyticsDashboard
-              events={myEvents}
-              registrations={registrations.filter(r => myEvents.some(e => e.id === r.eventId))}
-            />
+            <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="w-10 h-10 text-orange-500 animate-spin" /></div>}>
+              <AnalyticsDashboard
+                events={myEvents}
+                registrations={registrations.filter(r => myEvents.some(e => e.id === r.eventId))}
+              />
+            </Suspense>
           ) : (
             dataLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -3001,7 +3007,9 @@ export default function App() {
       </main>
 
       {renderAuthModal()}
-      <LiquidChrome />
+      <Suspense fallback={null}>
+        <LiquidChrome />
+      </Suspense>
 
       {/* --- MODALS --- */}
 
@@ -3341,9 +3349,16 @@ export default function App() {
                       type="button"
                       onClick={handleGenerateDescription}
                       disabled={isGeneratingAI}
-                      className="text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white px-2 py-1 rounded-md flex items-center gap-1 hover:opacity-90 disabled:opacity-50 transition-all"
+                      className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all font-medium ${isGeneratingAI
+                        ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 bg-[length:200%_100%] animate-[shimmer_1.5s_ease-in-out_infinite] text-white cursor-wait'
+                        : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:opacity-90 hover:scale-105'
+                        }`}
                     >
-                      <Sparkles className="w-3 h-3" />
+                      {isGeneratingAI ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
                       {isGeneratingAI ? 'Generating...' : 'AI Assist'}
                     </button>
                   </div>
@@ -4197,10 +4212,12 @@ export default function App() {
       {/* SCANNER MODAL */}
       {
         isScannerOpen && (
-          <Scanner
-            onScan={handleScan}
-            onClose={() => setIsScannerOpen(false)}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"><Loader2 className="w-10 h-10 text-orange-500 animate-spin" /></div>}>
+            <Scanner
+              onScan={handleScan}
+              onClose={() => setIsScannerOpen(false)}
+            />
+          </Suspense>
         )
       }
 

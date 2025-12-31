@@ -132,6 +132,23 @@ async function connectDB() {
 
 connectDB();
 
+// Cache management endpoint
+app.post('/api/cache/clear', (req, res) => {
+    if (global.apiCache) {
+        const size = global.apiCache.size;
+        global.apiCache.clear();
+        console.log(`🗑️ Cache cleared: ${size} entries removed`);
+        res.json({ success: true, message: `Cleared ${size} cache entries` });
+    } else {
+        res.json({ success: true, message: 'Cache was already empty' });
+    }
+});
+
+app.get('/api/cache/stats', (req, res) => {
+    const size = global.apiCache?.size || 0;
+    res.json({ entries: size, status: 'ok' });
+});
+
 // Generic Data API Proxy
 app.post('/api/action/:action', async (req, res) => {
     const { action } = req.params;
