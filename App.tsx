@@ -3341,9 +3341,16 @@ export default function App() {
                       type="button"
                       onClick={handleGenerateDescription}
                       disabled={isGeneratingAI}
-                      className="text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white px-2 py-1 rounded-md flex items-center gap-1 hover:opacity-90 disabled:opacity-50 transition-all"
+                      className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all font-medium ${isGeneratingAI
+                          ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 bg-[length:200%_100%] animate-[shimmer_1.5s_ease-in-out_infinite] text-white cursor-wait'
+                          : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:opacity-90 hover:scale-105'
+                        }`}
                     >
-                      <Sparkles className="w-3 h-3" />
+                      {isGeneratingAI ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
                       {isGeneratingAI ? 'Generating...' : 'AI Assist'}
                     </button>
                   </div>
