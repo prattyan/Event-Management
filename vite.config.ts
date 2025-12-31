@@ -15,7 +15,9 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
+            // Split node_modules into separate vendor chunks
             if (id.includes('node_modules')) {
+              // Large specific libraries get their own chunks
               if (id.includes('framer-motion')) return 'vendor-motion';
               if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
               if (id.includes('firebase')) return 'vendor-firebase';
@@ -24,6 +26,7 @@ export default defineConfig(({ mode }) => {
               if (id.includes('lucide-react')) return 'vendor-icons';
               if (id.includes('socket.io')) return 'vendor-socket';
               if (id.includes('html2canvas')) return 'vendor-canvas';
+              // Other smaller modules go into a common vendor chunk
               return 'vendor-common';
             }
           }

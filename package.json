@@ -10,7 +10,9 @@
     "server": "node server.js",
     "frontend": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cache:clear": "curl -X POST http://localhost:5005/api/cache/clear",
+    "cache:stats": "curl http://localhost:5005/api/cache/stats"
   },
   "dependencies": {
     "@google/genai": "^1.34.0",
